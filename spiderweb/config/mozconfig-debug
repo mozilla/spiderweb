@@ -1,4 +1,4 @@
-. $topsrcdir/positron/config/mozconfig
+. $topsrcdir/spiderweb/config/mozconfig
 
 # Build debug.
 ac_add_options --disable-optimize
