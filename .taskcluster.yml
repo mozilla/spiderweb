@@ -27,7 +27,7 @@ tasks:
         - -c
         - >
           git config --global gc.auto 0 &&
-          tc-vcs checkout repo $SPIDERWEB_URL $GITHUB_HEAD_REPO_URL $GITHUB_HEAD_BRANCH &&
+          tc-vcs checkout repo $SPIDERWEB_URL $GITHUB_HEAD_REPO_URL $GITHUB_HEAD_BRANCH --force-clone &&
           cd repo/ &&
           git submodule update --init &&
           ./mach build
@@ -58,7 +58,7 @@ tasks:
         - -c
         - >
           git config --global gc.auto 0 &&
-          tc-vcs checkout repo $SPIDERWEB_URL $GITHUB_HEAD_REPO_URL $GITHUB_HEAD_BRANCH &&
+          tc-vcs checkout repo $SPIDERWEB_URL $GITHUB_HEAD_REPO_URL $GITHUB_HEAD_BRANCH --force-clone &&
           cd repo/ &&
           git submodule update --init &&
           ./mach build
