@@ -1,0 +1,4 @@
+[submodule "spidernode"]
+	path = spiderweb/spidernode
+	url = https://github.com/mozilla/spiderweb-spidernode.git
+	branch = master
