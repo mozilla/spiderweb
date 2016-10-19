@@ -4,6 +4,8 @@
 
 Program('spiderweb')
 
+FINAL_TARGET = 'dist/bin'
+
 SOURCES += [
     'Main.cpp',
 ]
