@@ -1,0 +1,69 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+include $(topsrcdir)/config/config.mk
+
+# SpiderNode's ICU dependency uses typeid and dynamic_cast, so we need
+# to enable RTTI for it.  Erm, I guess this enables RTTI for the whole build,
+# but I'm unsure how to do so just for the submake of SpiderNode.
+
+ifdef MOZ_DEBUG
+BUILDTYPE = Debug
+else
+BUILDTYPE = Release
+endif
+
+SPIDERNODE_LIB_NAMES = \
+	cares \
+	http_parser \
+	node \
+	openssl \
+	spidershim \
+	uv \
+	zlib \
+	$(NULL)
+
+# The SpiderNode libraries that Spiderweb uses.  This needs to be kept in sync
+# with the USE_LIBS list in spiderweb/app/moz.build.
+SPIDERNODE_LIBS = $(foreach file,$(SPIDERNODE_LIB_NAMES),lib$(file).a)
+
+# The paths to the libraries in Spiderweb's objdir.  These are our build targets.
+SPIDERNODE_TARGETS = $(foreach file,$(SPIDERNODE_LIBS),$(DEPTH)/spiderweb/app/spidernode/.libs/$(file))
+
+# SpiderNode currently builds the static libraries in different places on Linux and OS X.
+# On OS X they're all in the one directory, whereas on Linux they're all
+# in different sub-directories under the library's name, except for Node which is in the
+# top obj.target folder.
+ifeq ($(OS_ARCH), Linux)
+LIB_PATH = obj.target/$(if $(filter node,$(1)),,deps/$(1)/)lib$(1).a
+else
+LIB_PATH = lib$(1).a
+endif
+
+# The paths to the libraries in SpiderNode's "out" dir.  This is where
+# the libraries are actually built, since we don't yet configure SpiderNode
+# to build directly to Spiderweb's objdir.
+SPIDERNODE_LIB_PATHS = $(foreach file,$(SPIDERNODE_LIB_NAMES),$(topsrcdir)/spiderweb/spidernode/out/$(BUILDTYPE)/$(call LIB_PATH,$(file)))
+
+.PHONY: spidernode
+
+# TODO: figure out a way to configure spidernode to build to the spiderweb output directory
+# 			(or configure spiderweb to look for the libraries in the spidernode output directory)
+
+spidernode:
+	$(MAKE) -C $(topsrcdir)/spiderweb/spidernode/out BUILDTYPE=$(BUILDTYPE)
+
+$(SPIDERNODE_LIB_PATHS): spidernode
+
+$(SPIDERNODE_TARGETS): $(SPIDERNODE_LIB_PATHS)
+	mkdir -p $(topobjdir)/spiderweb/app/spidernode/.libs
+	cp -fp $(SPIDERNODE_LIB_PATHS) $(topobjdir)/spiderweb/app/spidernode/.libs/
+
+clean::
+	cd $(topobjdir)/spiderweb/app/spidernode/.libs/ && rm -f $(SPIDERNODE_LIBS)
+	$(MAKE) -C $(topsrcdir)/spiderweb/spidernode BUILDTYPE=$(BUILDTYPE) clean
+
+distclean::
+	cd $(topobjdir)/spiderweb/app/spidernode/.libs/ && rm -f $(SPIDERNODE_LIBS)
+	$(MAKE) -C $(topsrcdir)/spiderweb/spidernode BUILDTYPE=$(BUILDTYPE) distclean
