@@ -22,9 +22,8 @@ using base::ProcessArchitecture;
 namespace mozilla {
 namespace node {
 
-NodeProcessParent::NodeProcessParent(const std::string& aNodePath)
-: GeckoChildProcessHost(GeckoProcessType_Node),
-  mNodePath(aNodePath)
+NodeProcessParent::NodeProcessParent()
+: GeckoChildProcessHost(GeckoProcessType_Node)
 {
   MOZ_COUNT_CTOR(NodeProcessParent);
 }

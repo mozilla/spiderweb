@@ -20,7 +20,7 @@ namespace node {
 class NodeProcessParent final : public mozilla::ipc::GeckoChildProcessHost
 {
 public:
-  explicit NodeProcessParent(const std::string& aNodePath);
+  explicit NodeProcessParent();
   ~NodeProcessParent();
 
   bool Launch(int32_t aTimeoutMs);
@@ -35,7 +35,6 @@ public:
 private:
   void DoDelete();
 
-  std::string mNodePath;
   nsCOMPtr<nsIRunnable> mDeletedCallback;
 
   DISALLOW_COPY_AND_ASSIGN(NodeProcessParent);
