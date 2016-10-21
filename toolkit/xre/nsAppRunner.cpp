@@ -4583,9 +4583,9 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 
   mozilla::node::NodeProcessParent* process = new mozilla::node::NodeProcessParent();
   if (process->Launch(30 * 1000)) {
-    printf("Process launched.");
+    printf("Process launched.\n");
   } else {
-    printf("Process not launched.");
+    printf("Process not launched.\n");
   }
   process->Delete();
 
