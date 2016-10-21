@@ -69,6 +69,7 @@
 #include "GMPProcessChild.h"
 #include "GMPLoader.h"
 #include "mozilla/gfx/GPUProcessImpl.h"
+#include "NodeProcessChild.h"
 
 #include "GeckoProfiler.h"
 
@@ -660,6 +661,10 @@ XRE_InitChildProcess(int aArgc,
 
       case GeckoProcessType_GPU:
         process = new gfx::GPUProcessImpl(parentPID);
+        break;
+
+      case GeckoProcessType_Node:
+        process = new node::NodeProcessChild(parentPID);
         break;
 
       default:

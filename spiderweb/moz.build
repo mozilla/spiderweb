@@ -5,10 +5,12 @@
 DIRS += ['app']
 
 EXPORTS += [
+  'NodeProcessChild.h',
   'NodeProcessParent.h',
 ]
 
 UNIFIED_SOURCES += [
+    'NodeProcessChild.cpp',
     'NodeProcessParent.cpp',
 ]
 
