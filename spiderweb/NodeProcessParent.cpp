@@ -37,7 +37,30 @@ NodeProcessParent::~NodeProcessParent()
 bool
 NodeProcessParent::Launch(int32_t aTimeoutMs)
 {
-  return false;
+  vector<string> args;
+
+  // Determine the binary path and push it onto the args.
+  //
+  // GMPProcessParent does this too, but then it calls SyncLaunch,
+  // which eventually calls GeckoChildProcessHost::PerformAsyncLaunchInternal,
+  // which calls GeckoChildProcessHost::GetPathToBinary and prepends the result
+  // to the args.  So perhaps we need to modify GetPathToBinary to determine
+  // the binary path for the Node binary.
+  //
+  // TODO: figure that out.
+  //
+  FilePath exePath;
+#ifdef OS_WIN
+    exePath = FilePath::FromWStringHack(CommandLine::ForCurrentProcess()->program());
+#else
+    exePath = FilePath(CommandLine::ForCurrentProcess()->argv()[0]);
+#endif
+    exePath = exePath.DirName();
+  exePath = exePath.AppendASCII("spiderweb");
+  args.push_back(exePath.value());
+
+  // TODO: Use AsyncLaunch in our case?
+  return SyncLaunch(args, aTimeoutMs, base::GetCurrentProcessArchitecture());
 }
 
 void
