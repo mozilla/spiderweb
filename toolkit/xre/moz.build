@@ -143,6 +143,7 @@ LOCAL_INCLUDES += [
     '/config',
     '/dom/base',
     '/dom/ipc',
+    '/spiderweb',
     '/testing/gtest/mozilla',
     '/toolkit/crashreporter',
     '/xpcom/build',

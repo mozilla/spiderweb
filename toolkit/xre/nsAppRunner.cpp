@@ -6,6 +6,7 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
+#include "NodeProcessParent.h"
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
@@ -4579,6 +4580,14 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 
   rv = mScopedXPCOM->Initialize();
   NS_ENSURE_SUCCESS(rv, 1);
+
+  mozilla::node::NodeProcessParent* process = new mozilla::node::NodeProcessParent();
+  if (process->Launch(30 * 1000)) {
+    printf("Process launched.");
+  } else {
+    printf("Process not launched.");
+  }
+  process->Delete();
 
   // run!
   rv = XRE_mainRun();
