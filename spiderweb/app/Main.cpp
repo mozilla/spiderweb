@@ -5,6 +5,9 @@
 
 #include <stdio.h>
 #include "node.h"
+#include "nsXPCOM.h"
+#include "nsXULAppAPI.h"
+#include "GMPLoader.h"
 
 extern "C" {
   void _register_async_wrap(void);
@@ -68,5 +71,14 @@ int main(int argc, char* argv[])
     _register_udp_wrap();
     _register_uv();
   }
+
+
   node::Start(argc, argv);
+
+  XREChildData childData;
+
+  nsresult rv = XRE_InitChildProcess(argc, argv, &childData);
+  NS_ENSURE_SUCCESS(rv, 1);
+
+  return 0;
 }
