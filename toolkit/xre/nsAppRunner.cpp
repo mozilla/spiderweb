@@ -4448,6 +4448,14 @@ XREMain::XRE_mainRun()
 #endif /* MOZ_CONTENT_SANDBOX && !MOZ_WIDGET_GONK */
 #endif /* MOZ_CRASHREPORTER */
 
+  mozilla::node::NodeProcessParent* process = new mozilla::node::NodeProcessParent();
+  if (process->Launch(30 * 1000)) {
+    printf("Process launched.\n");
+  } else {
+    printf("Process not launched.\n");
+  }
+  process->Delete();
+
   {
     rv = appStartup->Run();
     if (NS_FAILED(rv)) {
@@ -4580,14 +4588,6 @@ XREMain::XRE_main(int argc, char* argv[], const nsXREAppData* aAppData)
 
   rv = mScopedXPCOM->Initialize();
   NS_ENSURE_SUCCESS(rv, 1);
-
-  mozilla::node::NodeProcessParent* process = new mozilla::node::NodeProcessParent();
-  if (process->Launch(30 * 1000)) {
-    printf("Process launched.\n");
-  } else {
-    printf("Process not launched.\n");
-  }
-  process->Delete();
 
   // run!
   rv = XRE_mainRun();
