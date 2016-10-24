@@ -48,15 +48,15 @@ NodeProcessParent::Launch(int32_t aTimeoutMs)
   //
   // TODO: figure that out.
   //
-  FilePath exePath;
-#ifdef OS_WIN
-    exePath = FilePath::FromWStringHack(CommandLine::ForCurrentProcess()->program());
-#else
-    exePath = FilePath(CommandLine::ForCurrentProcess()->argv()[0]);
-#endif
-    exePath = exePath.DirName();
-  exePath = exePath.AppendASCII("spiderweb");
-  args.push_back(exePath.value());
+//   FilePath exePath;
+// #ifdef OS_WIN
+//   exePath = FilePath::FromWStringHack(CommandLine::ForCurrentProcess()->program());
+// #else
+//   exePath = FilePath(CommandLine::ForCurrentProcess()->argv()[0]);
+// #endif
+//   exePath = exePath.DirName();
+//   exePath = exePath.AppendASCII("spiderweb");
+//   args.push_back(exePath.value());
 
   // TODO: Use AsyncLaunch in our case?
   return SyncLaunch(args, aTimeoutMs, base::GetCurrentProcessArchitecture());
