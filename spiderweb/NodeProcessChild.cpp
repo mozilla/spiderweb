@@ -23,7 +23,7 @@ NodeProcessChild::~NodeProcessChild()
 bool
 NodeProcessChild::Init()
 {
-  return false;
+  return true;
 }
 
 void
