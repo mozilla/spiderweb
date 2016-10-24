@@ -72,13 +72,12 @@ int main(int argc, char* argv[])
     _register_uv();
   }
 
-
-  node::Start(argc, argv);
-
   XREChildData childData;
 
   nsresult rv = XRE_InitChildProcess(argc, argv, &childData);
   NS_ENSURE_SUCCESS(rv, 1);
+
+  node::Start(argc, argv);
 
   return 0;
 }
