@@ -74,6 +74,7 @@ int main(int argc, char* argv[])
 
   XREChildData childData;
 
+  printf("Node child process about to XRE_InitChildProcess\n");
   nsresult rv = XRE_InitChildProcess(argc, argv, &childData);
   NS_ENSURE_SUCCESS(rv, 1);
 

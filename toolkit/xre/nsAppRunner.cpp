@@ -4448,11 +4448,12 @@ XREMain::XRE_mainRun()
 #endif /* MOZ_CONTENT_SANDBOX && !MOZ_WIDGET_GONK */
 #endif /* MOZ_CRASHREPORTER */
 
+  printf("Firefox parent process about to launch Node child process\n");
   mozilla::node::NodeProcessParent* process = new mozilla::node::NodeProcessParent();
   if (process->Launch(30 * 1000)) {
-    printf("Process launched.\n");
+    printf("Node child process launched\n");
   } else {
-    printf("Process not launched.\n");
+    printf("Node child process failed to launch\n");
   }
   process->Delete();
 
