@@ -72,6 +72,8 @@ int main(int argc, char* argv[])
     _register_uv();
   }
 
+  XRE_SetProcessType(argv[--argc]);
+
   XREChildData childData;
 
   printf("Node child process about to XRE_InitChildProcess\n");
