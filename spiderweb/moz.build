@@ -5,13 +5,17 @@
 DIRS += ['app']
 
 EXPORTS += [
+  'NodeChild.h',
+  'NodeParent.h',
   'NodeProcessChild.h',
   'NodeProcessParent.h',
 ]
 
 UNIFIED_SOURCES += [
-    'NodeProcessChild.cpp',
-    'NodeProcessParent.cpp',
+  'NodeChild.cpp',
+  'NodeParent.cpp',
+  'NodeProcessChild.cpp',
+  'NodeProcessParent.cpp',
 ]
 
 LOCAL_INCLUDES += [
@@ -24,13 +28,17 @@ LOCAL_INCLUDES += [
 # The SpiderNode libraries that spiderweb uses.  This needs to be kept in sync
 # with the SPIDERNODE_LIBS list in spiderweb/webidl/Makefile.in.
 USE_LIBS += [
-    'static:/spiderweb/app/spidernode/.libs/cares',
-    'static:/spiderweb/app/spidernode/.libs/http_parser',
-    'static:/spiderweb/app/spidernode/.libs/node',
-    'static:/spiderweb/app/spidernode/.libs/openssl',
-    'static:/spiderweb/app/spidernode/.libs/spidershim',
-    'static:/spiderweb/app/spidernode/.libs/uv',
-    'static:/spiderweb/app/spidernode/.libs/zlib',
+  'static:/spiderweb/app/spidernode/.libs/cares',
+  'static:/spiderweb/app/spidernode/.libs/http_parser',
+  'static:/spiderweb/app/spidernode/.libs/node',
+  'static:/spiderweb/app/spidernode/.libs/openssl',
+  'static:/spiderweb/app/spidernode/.libs/spidershim',
+  'static:/spiderweb/app/spidernode/.libs/uv',
+  'static:/spiderweb/app/spidernode/.libs/zlib',
+]
+
+IPDL_SOURCES += [
+  'PNode.ipdl',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')

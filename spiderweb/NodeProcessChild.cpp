@@ -7,6 +7,9 @@
 
 #include "base/command_line.h"
 #include "base/string_util.h"
+#include "mozilla/ipc/IOThreadChild.h"
+
+using mozilla::ipc::IOThreadChild;
 
 namespace mozilla {
 namespace node {
@@ -23,7 +26,9 @@ NodeProcessChild::~NodeProcessChild()
 bool
 NodeProcessChild::Init()
 {
-  return true;
+  return mNodeChild.Init(ParentPid(),
+                         IOThreadChild::message_loop(),
+                         IOThreadChild::channel());
 }
 
 void

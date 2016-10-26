@@ -6,6 +6,7 @@
 #pragma once
 
 #include "mozilla/ipc/ProcessChild.h"
+#include "NodeChild.h"
 
 namespace mozilla {
 namespace node {
@@ -25,6 +26,7 @@ public:
 
 private:
   DISALLOW_COPY_AND_ASSIGN(NodeProcessChild);
+  NodeChild mNodeChild;
 };
 
 } // namespace node
