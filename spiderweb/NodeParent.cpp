@@ -10,12 +10,12 @@ namespace node {
 
 NodeParent::NodeParent()
 {
-    MOZ_COUNT_CTOR(NodeParent);
+  MOZ_COUNT_CTOR(NodeParent);
 }
 
 MOZ_IMPLICIT NodeParent::~NodeParent()
 {
-    MOZ_COUNT_DTOR(NodeParent);
+  MOZ_COUNT_DTOR(NodeParent);
 }
 
 void
@@ -26,7 +26,8 @@ NodeParent::Init()
 bool
 NodeParent::RecvPing()
 {
-    return false;
+  printf("Ping!\n");
+  return SendPong();
 }
 
 void

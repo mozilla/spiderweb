@@ -14,12 +14,12 @@ namespace node {
 
 MOZ_IMPLICIT NodeChild::NodeChild()
 {
-    MOZ_COUNT_CTOR(NodeChild);
+  MOZ_COUNT_CTOR(NodeChild);
 }
 
 MOZ_IMPLICIT NodeChild::~NodeChild()
 {
-    MOZ_COUNT_DTOR(NodeChild);
+  MOZ_COUNT_DTOR(NodeChild);
 }
 
 bool
@@ -31,13 +31,14 @@ NodeChild::Init(base::ProcessId aParentPid,
     return false;
   }
 
-  return true;
+  return SendPing();
 }
 
 bool
 NodeChild::RecvPong()
 {
-    return false;
+  printf("Pong!\n");
+  return true;
 }
 
 } // namespace node
