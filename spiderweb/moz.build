@@ -18,25 +18,6 @@ UNIFIED_SOURCES += [
   'NodeProcessParent.cpp',
 ]
 
-LOCAL_INCLUDES += [
-  'spidernode/deps/cares/include',
-  'spidernode/deps/spidershim/include',
-  'spidernode/deps/uv/include',
-  'spidernode/src',
-]
-
-# The SpiderNode libraries that spiderweb uses.  This needs to be kept in sync
-# with the SPIDERNODE_LIBS list in spiderweb/webidl/Makefile.in.
-USE_LIBS += [
-  'static:/spiderweb/app/spidernode/.libs/cares',
-  'static:/spiderweb/app/spidernode/.libs/http_parser',
-  'static:/spiderweb/app/spidernode/.libs/node',
-  'static:/spiderweb/app/spidernode/.libs/openssl',
-  'static:/spiderweb/app/spidernode/.libs/spidershim',
-  'static:/spiderweb/app/spidernode/.libs/uv',
-  'static:/spiderweb/app/spidernode/.libs/zlib',
-]
-
 IPDL_SOURCES += [
   'PNode.ipdl',
 ]
