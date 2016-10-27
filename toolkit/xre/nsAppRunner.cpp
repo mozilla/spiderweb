@@ -7,6 +7,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "NodeProcessParent.h"
+#include "NodeParent.h"
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
@@ -4450,12 +4451,12 @@ XREMain::XRE_mainRun()
 
   printf("Firefox parent process about to launch Node child process\n");
   mozilla::node::NodeProcessParent* process = new mozilla::node::NodeProcessParent();
+  mozilla::node::NodeParent* nodeParent = new mozilla::node::NodeParent();
   if (process->Launch(30 * 1000)) {
     printf("Node child process launched\n");
   } else {
     printf("Node child process failed to launch\n");
   }
-  process->Delete();
 
   {
     rv = appStartup->Run();

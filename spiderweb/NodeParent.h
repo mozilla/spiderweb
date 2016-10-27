@@ -13,11 +13,13 @@ namespace node {
 
 class NodeParent : public PNodeParent
 {
-  MOZ_IMPLICIT NodeParent();
+public:
+  NodeParent();
   virtual ~NodeParent();
 
   void Init();
 
+private:
   virtual bool
   RecvPing();
 

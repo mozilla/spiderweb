@@ -8,7 +8,7 @@
 namespace mozilla {
 namespace node {
 
-MOZ_IMPLICIT NodeParent::NodeParent()
+NodeParent::NodeParent()
 {
     MOZ_COUNT_CTOR(NodeParent);
 }
