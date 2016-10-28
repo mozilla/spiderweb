@@ -9,6 +9,7 @@ namespace mozilla {
 namespace node {
 
 NodeParent::NodeParent()
+  : mProcess(nullptr)
 {
   MOZ_COUNT_CTOR(NodeParent);
 }
@@ -16,11 +17,44 @@ NodeParent::NodeParent()
 MOZ_IMPLICIT NodeParent::~NodeParent()
 {
   MOZ_COUNT_DTOR(NodeParent);
+  MOZ_ASSERT(!mProcess);
 }
 
 void
 NodeParent::Init()
 {
+}
+
+nsresult
+NodeParent::LaunchProcess()
+{
+  MOZ_ASSERT(!mProcess);
+
+  mProcess = new NodeProcessParent();
+
+  if (!mProcess->Launch(30 * 1000)) {
+    mProcess->Delete();
+    mProcess = nullptr;
+    return NS_ERROR_FAILURE;
+  }
+
+  if (!Open(mProcess->GetChannel(),
+            base::GetProcId(mProcess->GetChildProcessHandle()))) {
+    mProcess->Delete();
+    mProcess = nullptr;
+    return NS_ERROR_FAILURE;
+  }
+
+  return NS_OK;
+}
+
+void
+NodeParent::DeleteProcess()
+{
+  Close();
+
+  mProcess->Delete();
+  mProcess = nullptr;
 }
 
 bool

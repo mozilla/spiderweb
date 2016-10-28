@@ -17,9 +17,18 @@ public:
   NodeParent();
   virtual ~NodeParent();
 
-  void Init();
+  void
+  Init();
+
+  nsresult
+  LaunchProcess();
+
+  void
+  DeleteProcess();
 
 private:
+  NodeProcessParent* mProcess;
+
   virtual bool
   RecvPing();
 

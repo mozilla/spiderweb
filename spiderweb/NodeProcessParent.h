@@ -25,7 +25,7 @@ public:
 
   bool Launch(int32_t aTimeoutMs);
 
-  void Delete(nsCOMPtr<nsIRunnable> aCallback = nullptr);
+  void Delete();
 
   bool CanShutdown() override { return true; }
 
@@ -33,10 +33,6 @@ public:
   using mozilla::ipc::GeckoChildProcessHost::GetChildProcessHandle;
 
 private:
-  void DoDelete();
-
-  nsCOMPtr<nsIRunnable> mDeletedCallback;
-
   DISALLOW_COPY_AND_ASSIGN(NodeProcessParent);
 };
 

@@ -63,23 +63,18 @@ NodeProcessParent::Launch(int32_t aTimeoutMs)
 }
 
 void
-NodeProcessParent::Delete(nsCOMPtr<nsIRunnable> aCallback)
+NodeProcessParent::Delete()
 {
-  mDeletedCallback = aCallback;
-  XRE_GetIOMessageLoop()->PostTask(NewNonOwningRunnableMethod(this, &NodeProcessParent::DoDelete));
-}
+  MessageLoop* currentLoop = MessageLoop::current();
+  MessageLoop* ioLoop = XRE_GetIOMessageLoop();
 
-void
-NodeProcessParent::DoDelete()
-{
-  MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
-  Join();
-
-  if (mDeletedCallback) {
-    mDeletedCallback->Run();
+  if (currentLoop == ioLoop) {
+    Join();
+    delete this;
+    return;
   }
 
-  delete this;
+  ioLoop->PostTask(NewNonOwningRunnableMethod(this, &NodeProcessParent::Delete));
 }
 
 } // namespace node

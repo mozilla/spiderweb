@@ -4449,17 +4449,8 @@ XREMain::XRE_mainRun()
 #endif /* MOZ_CONTENT_SANDBOX && !MOZ_WIDGET_GONK */
 #endif /* MOZ_CRASHREPORTER */
 
-  mozilla::node::NodeProcessParent* process = new mozilla::node::NodeProcessParent();
   mozilla::node::NodeParent* nodeParent = new mozilla::node::NodeParent();
-  if (!process->Launch(30 * 1000)) {
-    process->Delete();
-    delete nodeParent;
-    return NS_ERROR_FAILURE;
-  }
-
-  if (!nodeParent->Open(process->GetChannel(),
-                        base::GetProcId(process->GetChildProcessHandle()))) {
-    process->Delete();
+  if (NS_FAILED(nodeParent->LaunchProcess())) {
     delete nodeParent;
     return NS_ERROR_FAILURE;
   }
@@ -4472,7 +4463,7 @@ XREMain::XRE_mainRun()
     }
   }
 
-  process->Delete();
+  nodeParent->DeleteProcess();
   delete nodeParent;
 
 #ifdef MOZ_STYLO
