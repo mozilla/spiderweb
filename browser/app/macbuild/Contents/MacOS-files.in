@@ -4,6 +4,7 @@
 /firefox-bin
 /gtest/***
 /pk12util
+/spiderweb
 /ssltunnel
 /xpcshell
 /XUL

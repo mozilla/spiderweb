@@ -3,3 +3,25 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DIRS += ['app']
+
+EXPORTS += [
+  'NodeChild.h',
+  'NodeParent.h',
+  'NodeProcessChild.h',
+  'NodeProcessParent.h',
+]
+
+UNIFIED_SOURCES += [
+  'NodeChild.cpp',
+  'NodeParent.cpp',
+  'NodeProcessChild.cpp',
+  'NodeProcessParent.cpp',
+]
+
+IPDL_SOURCES += [
+  'PNode.ipdl',
+]
+
+include('/ipc/chromium/chromium-config.mozbuild')
+
+FINAL_LIBRARY = 'xul'

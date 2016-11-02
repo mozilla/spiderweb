@@ -6,6 +6,8 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
+#include "NodeProcessParent.h"
+#include "NodeParent.h"
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
@@ -852,9 +854,10 @@ SYNC_ENUMS(CONTENT, Content)
 SYNC_ENUMS(IPDLUNITTEST, IPDLUnitTest)
 SYNC_ENUMS(GMPLUGIN, GMPlugin)
 SYNC_ENUMS(GPU, GPU)
+SYNC_ENUMS(NODE, Node)
 
 // .. and ensure that that is all of them:
-static_assert(GeckoProcessType_GPU + 1 == GeckoProcessType_End,
+static_assert(GeckoProcessType_Node + 1 == GeckoProcessType_End,
               "Did not find the final GeckoProcessType");
 
 NS_IMETHODIMP
@@ -4446,6 +4449,12 @@ XREMain::XRE_mainRun()
 #endif /* MOZ_CONTENT_SANDBOX && !MOZ_WIDGET_GONK */
 #endif /* MOZ_CRASHREPORTER */
 
+  mozilla::node::NodeParent* nodeParent = new mozilla::node::NodeParent();
+  if (NS_FAILED(nodeParent->LaunchProcess())) {
+    delete nodeParent;
+    return NS_ERROR_FAILURE;
+  }
+
   {
     rv = appStartup->Run();
     if (NS_FAILED(rv)) {
@@ -4453,6 +4462,9 @@ XREMain::XRE_mainRun()
       gLogConsoleErrors = true;
     }
   }
+
+  nodeParent->DeleteProcess();
+  delete nodeParent;
 
 #ifdef MOZ_STYLO
     // This, along with the call to Servo_Initialize, should eventually move back
