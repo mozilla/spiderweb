@@ -61,6 +61,23 @@ bool
 NodeParent::RecvPing()
 {
   printf("Ping!\n");
+
+  // TODO move the node init code out of Ping
+
+  // Spidernode needs the path to the ICU data.
+#if EXPOSE_INTL_API && defined(MOZ_ICU_DATA_ARCHIVE)
+  nsAutoCString icuDataPath(u_getDataDirectory());
+#else
+  nsAutoCString icuDataPath("");
+#endif
+
+  // TODO remove hardcoded init script and use value from extension
+  nsTArray<nsCString> args;
+  args.AppendElement(NS_LITERAL_CSTRING("node"));
+  args.AppendElement(NS_LITERAL_CSTRING("test.js"));
+  if (!SendStartNode(args, icuDataPath)) {
+    return false;
+  }
   return SendPong();
 }
 

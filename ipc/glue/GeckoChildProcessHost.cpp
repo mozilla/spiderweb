@@ -158,17 +158,6 @@ GeckoChildProcessHost::GetPathToBinary(FilePath& exePath, GeckoProcessType proce
     return;
   }
 
-  if (processType == GeckoProcessType_Node) {
-#ifdef OS_WIN
-    exePath = FilePath::FromWStringHack(CommandLine::ForCurrentProcess()->program());
-#else
-    exePath = FilePath(CommandLine::ForCurrentProcess()->argv()[0]);
-#endif
-    exePath = exePath.DirName();
-    exePath = exePath.AppendASCII("spiderweb");
-    return;
-  }
-
   if (ShouldHaveDirectoryService()) {
     MOZ_ASSERT(gGREBinPath);
 #ifdef OS_WIN

@@ -13,6 +13,7 @@ parent:
 
 child:
   async Pong();
+  async StartNode(nsCString[] aInitArgs, nsCString aICUDataDir);
 
 };
 

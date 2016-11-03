@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-DIRS += ['app']
-
 EXPORTS += [
   'NodeChild.h',
   'NodeParent.h',
@@ -18,10 +16,61 @@ UNIFIED_SOURCES += [
   'NodeProcessParent.cpp',
 ]
 
+SOURCES += [
+  'NodeBindings.cpp',
+]
+
+if CONFIG['OS_ARCH'] == 'Darwin':
+    SOURCES += [
+        'NodeBindingsMac.cpp',
+    ]
+
+if CONFIG['OS_ARCH'] == 'Linux':
+    SOURCES += [
+        'NodeBindingsLinux.cpp',
+    ]
+
 IPDL_SOURCES += [
   'PNode.ipdl',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
+
+DEFINES['NODE_WANT_INTERNALS'] = 1
+DEFINES['MOZILLA_INTERNAL_API'] = True
+
+if CONFIG['MOZ_ICU_DATA_ARCHIVE']:
+    DEFINES['MOZ_ICU_DATA_ARCHIVE'] = True
+
+# Spiderweb needs -mmacosx-version-min=10.9 in order to build SpiderNode per
+# https://github.com/mozilla/spidernode/issues/166.
+if CONFIG['OS_ARCH'] == 'Darwin':
+    CXXFLAGS += ['-mmacosx-version-min=10.9']
+    LDFLAGS += ['-mmacosx-version-min=10.9']
+
+# Declare a dependency on static libjs in an attempt to force it to get built
+# before compiling and linking SpiderNode.
+# TODO: figure out a better way to express this dependency (and SpiderNode's
+# dependency on icudata.o, for that matter).
+USE_LIBS += ['static:js']
+
+# The SpiderNode libraries that spiderweb uses.  This needs to be kept in sync
+# with the SPIDERNODE_LIBS list in spiderweb/webidl/Makefile.in.
+USE_LIBS += [
+    'static:/spiderweb/app/spidernode/.libs/cares',
+    'static:/spiderweb/app/spidernode/.libs/http_parser',
+    'static:/spiderweb/app/spidernode/.libs/node',
+    'static:/spiderweb/app/spidernode/.libs/openssl',
+    'static:/spiderweb/app/spidernode/.libs/spidershim',
+    'static:/spiderweb/app/spidernode/.libs/uv',
+    'static:/spiderweb/app/spidernode/.libs/zlib',
+]
+
+LOCAL_INCLUDES += [
+  'spidernode/deps/cares/include',
+  'spidernode/deps/spidershim/include',
+  'spidernode/deps/uv/include',
+  'spidernode/src',
+]
 
 FINAL_LIBRARY = 'xul'

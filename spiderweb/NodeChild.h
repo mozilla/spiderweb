@@ -14,6 +14,8 @@ class NodeChild : public PNodeChild
 {
 public:
   virtual bool RecvPong();
+  virtual bool RecvStartNode(nsTArray<nsCString>&& aInitArgs,
+                             const nsCString& aICUDataDir);
 
   MOZ_IMPLICIT NodeChild();
   virtual ~NodeChild();
