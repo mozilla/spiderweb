@@ -8,6 +8,9 @@ namespace node {
 
 async protocol PNode
 {
+both:
+  async Message(nsCString aMessage);
+
 parent:
   async Ping();
 

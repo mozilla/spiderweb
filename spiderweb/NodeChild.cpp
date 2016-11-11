@@ -8,9 +8,9 @@
 #include "mozilla/ipc/ProcessChild.h"
 #include "NodeBindings.h"
 
-// #if EXPOSE_INTL_API
+#if EXPOSE_INTL_API
 #include "unicode/putil.h"
-// #endif
+#endif
 
 // Force all builtin modules to be referenced so they can actually run their
 // DSO constructors, see http://git.io/DRIqCg.
@@ -44,6 +44,8 @@ REFERENCE_MODULE(tls_wrap);
 REFERENCE_MODULE(tty_wrap);
 REFERENCE_MODULE(udp_wrap);
 REFERENCE_MODULE(uv);
+// Spiderweb's builtin modules:
+REFERENCE_MODULE(web_extension);
 #undef REFERENCE_MODULE
 
 
@@ -86,9 +88,16 @@ NodeChild::RecvStartNode(nsTArray<nsCString>&& aInitArgs,
   for (uint32_t t = 0; t < aInitArgs.Length(); t++) {
     args[t] = const_cast<char*>(aInitArgs[t].get());
   }
-  NodeBindings* nb = NodeBindings::Create();
-  nb->Initialize(aInitArgs.Length(), args);
+  NodeBindings* nb = NodeBindings::Instance();
+  nb->Initialize(this, aInitArgs.Length(), args);
 
+  return true;
+}
+
+bool
+NodeChild::RecvMessage(const nsCString& aMessage)
+{
+  NodeBindings::Instance()->RecvMessage(ToNewCString(aMessage));
   return true;
 }
 

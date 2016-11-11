@@ -18,6 +18,10 @@ class Environment;
 
 namespace mozilla {
 
+namespace node {
+class NodeChild;
+}
+
 class NodeBindings {
  public:
   // Needed to use message loop's PostTask
@@ -25,8 +29,10 @@ class NodeBindings {
 
   static NodeBindings* Create();
 
+  static NodeBindings *Instance();
+
   // Setup V8, libuv.
-  void Initialize(int argc, char** argv);
+  void Initialize(mozilla::node::NodeChild* nodeChild, int argc, char** argv);
 
   // Create the environment and load node.js.
   ::node::Environment* CreateEnvironment(v8::Handle<v8::Context> context,
@@ -47,6 +53,12 @@ class NodeBindings {
   ::node::Environment* uv_env() const { return uv_env_; }
 
   void ActivateUVLoop(v8::Isolate* isolate);
+
+  void SendMessage(v8::Handle<v8::String> message);
+
+  void SetRecvMessageCallback(v8::Isolate* isolate, v8::Local<v8::Function> callback);
+
+  void RecvMessage(char* message);
 
  protected:
   explicit NodeBindings();
@@ -70,6 +82,10 @@ class NodeBindings {
 
   // Main thread's libuv loop.
   uv_loop_t* uv_loop_;
+
+  node::NodeChild* node_child;
+
+  v8::Persistent<v8::Function> recvMessageCallback;
 
  private:
   // Thread to poll uv events.

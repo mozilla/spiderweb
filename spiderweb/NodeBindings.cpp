@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "NodeBindings.h"
+#include "NodeChild.h"
 
 #include <string>
 #include <vector>
@@ -39,7 +40,8 @@ NodeBindings::~NodeBindings() {
   isolate->Dispose();
 }
 
-void NodeBindings::Initialize(int argc, char** argv) {
+void NodeBindings::Initialize(node::NodeChild* nodeChild, int argc, char** argv) {
+  node_child = nodeChild;
   v8::V8::Initialize();
   uv_async_init(uv_default_loop(), &call_next_tick_async_, OnCallNextTick);
   call_next_tick_async_.data = this;
@@ -199,6 +201,39 @@ void NodeBindings::WakeupEmbedThread() {
   uv_async_send(&dummy_uv_handle_);
 }
 
+const char* ToCString(const v8::String::Utf8Value& value) {
+  return *value ? *value : "<string conversion failed>";
+}
+
+void NodeBindings::SendMessage(v8::Handle<v8::String> message) {
+  v8::String::Utf8Value utf8String(message);
+  node_child->SendMessage(nsAutoCString(ToCString(utf8String)));
+}
+
+void NodeBindings::RecvMessage(char* message) {
+  MOZ_ASSERT(NS_IsMainThread());
+  ::node::Environment* env = uv_env();
+
+  v8::Isolate::Scope isolate_scope(env->isolate());
+
+  // TODO
+  // Use Locker in browser process.
+  // mate::Locker locker(env->isolate());
+  v8::HandleScope handle_scope(env->isolate());
+
+  // Enter node context while dealing with ipc messages.
+  v8::Context::Scope context_scope(env->context());
+
+  v8::Local<v8::String> str = v8::String::NewFromUtf8(isolate, message);
+  const unsigned argc = 1;
+  v8::Local<v8::Value> argv[argc] = { str };
+  v8::Local<v8::Function>::New(isolate, recvMessageCallback)->Call(Null(isolate), argc, argv);
+}
+
+void NodeBindings::SetRecvMessageCallback(v8::Isolate* isolate, v8::Local<v8::Function> callback) {
+  recvMessageCallback.Reset(isolate, callback);
+}
+
 // static
 void NodeBindings::EmbedThreadRunner(void *arg) {
   NodeBindings* self = static_cast<NodeBindings*>(arg);
@@ -221,6 +256,16 @@ void NodeBindings::EmbedThreadRunner(void *arg) {
     // Deal with event in main thread.
     self->WakeupMainThread();
   }
+}
+
+StaticRefPtr<NodeBindings> s_instance;
+
+// static
+NodeBindings* NodeBindings::Instance() {
+  if (!s_instance) {
+    s_instance = Create();
+  }
+  return s_instance;
 }
 
 }  // namespace mozilla

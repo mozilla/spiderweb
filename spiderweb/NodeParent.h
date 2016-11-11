@@ -32,6 +32,9 @@ private:
   virtual bool
   RecvPing();
 
+  virtual bool
+  RecvMessage(const nsCString& aMessage);
+
   virtual void
   ActorDestroy(ActorDestroyReason aWhy);
 };

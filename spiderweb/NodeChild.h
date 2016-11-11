@@ -16,6 +16,7 @@ public:
   virtual bool RecvPong();
   virtual bool RecvStartNode(nsTArray<nsCString>&& aInitArgs,
                              const nsCString& aICUDataDir);
+  virtual bool RecvMessage(const nsCString& aMessage);
 
   MOZ_IMPLICIT NodeChild();
   virtual ~NodeChild();

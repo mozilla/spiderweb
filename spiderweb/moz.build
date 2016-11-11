@@ -10,14 +10,15 @@ EXPORTS += [
 ]
 
 UNIFIED_SOURCES += [
-  'NodeChild.cpp',
   'NodeParent.cpp',
   'NodeProcessChild.cpp',
   'NodeProcessParent.cpp',
 ]
 
 SOURCES += [
+  'modules/WebExtension.cpp',
   'NodeBindings.cpp',
+  'NodeChild.cpp',
 ]
 
 if CONFIG['OS_ARCH'] == 'Darwin':
@@ -34,9 +35,17 @@ IPDL_SOURCES += [
   'PNode.ipdl',
 ]
 
+EXTRA_JS_MODULES.spiderweb += [
+  'modules/init.js',
+]
+EXTRA_JS_MODULES.spiderweb.exports += [
+  'modules/exports/browser.js',
+]
+
 include('/ipc/chromium/chromium-config.mozbuild')
 
 DEFINES['NODE_WANT_INTERNALS'] = 1
+DEFINES['NODE_SHARED_MODE'] = 1
 DEFINES['MOZILLA_INTERNAL_API'] = True
 
 if CONFIG['MOZ_ICU_DATA_ARCHIVE']:

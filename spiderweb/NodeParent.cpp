@@ -4,6 +4,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "NodeParent.h"
+#include "nsIFile.h"
+#include "nsDirectoryService.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsString.h"
+
+#if EXPOSE_INTL_API
+#include "unicode/putil.h"
+#endif
 
 namespace mozilla {
 namespace node {
@@ -60,7 +68,7 @@ NodeParent::DeleteProcess()
 bool
 NodeParent::RecvPing()
 {
-  printf("Ping!\n");
+  printf("Ping!\n ");
 
   // TODO move the node init code out of Ping
 
@@ -71,14 +79,37 @@ NodeParent::RecvPing()
   nsAutoCString icuDataPath("");
 #endif
 
-  // TODO remove hardcoded init script and use value from extension
+  // Build the path to the init script.
+  nsCOMPtr<nsIFile> greDir;
+  nsDirectoryService::gService->Get(NS_GRE_DIR,
+                                    NS_GET_IID(nsIFile),
+                                    getter_AddRefs(greDir));
+  MOZ_ASSERT(greDir);
+  greDir->AppendNative(NS_LITERAL_CSTRING("modules"));
+  greDir->AppendNative(NS_LITERAL_CSTRING("spiderweb"));
+  greDir->AppendNative(NS_LITERAL_CSTRING("init.js"));
+  nsAutoString initScript;
+  greDir->GetPath(initScript);
+
   nsTArray<nsCString> args;
   args.AppendElement(NS_LITERAL_CSTRING("node"));
+  args.AppendElement(NS_LossyConvertUTF16toASCII(initScript));
+  // TODO remove hardcoded init script and use value from extension
   args.AppendElement(NS_LITERAL_CSTRING("test.js"));
   if (!SendStartNode(args, icuDataPath)) {
     return false;
   }
   return SendPong();
+}
+
+bool
+NodeParent::RecvMessage(const nsCString& aMessage)
+{
+  // TODO: remove this hardcoded testing string and wire up extension
+  if (!SendMessage(NS_LITERAL_CSTRING("{\"portId\": 1, \"message\": \"node parent responding\"}"))) {
+    return false;
+  }
+  return true;
 }
 
 void
