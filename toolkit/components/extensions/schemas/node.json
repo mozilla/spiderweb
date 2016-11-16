@@ -1,0 +1,15 @@
+[
+  {
+    "namespace": "node",
+    "description": "Use the <code>browser.node</code> API to start and communicate with a Node process.",
+    "functions": [
+      {
+        "name": "start",
+        "type": "function",
+        "description": "Starts a Node process.",
+        "permissions": ["node"],
+        "parameters": []
+      }
+    ]
+  }
+]
