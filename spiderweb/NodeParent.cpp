@@ -8,6 +8,8 @@
 namespace mozilla {
 namespace node {
 
+using namespace mozilla::ipc;
+
 NodeParent::NodeParent()
   : mProcess(nullptr)
 {
@@ -57,11 +59,14 @@ NodeParent::DeleteProcess()
   mProcess = nullptr;
 }
 
-bool
+mozilla::ipc::IPCResult
 NodeParent::RecvPing()
 {
   printf("Ping!\n");
-  return SendPong();
+  if (SendPong()) {
+    return IPC_OK();
+  }
+  return IPC_FAIL_NO_REASON(this);
 }
 
 void

@@ -34,11 +34,11 @@ NodeChild::Init(base::ProcessId aParentPid,
   return SendPing();
 }
 
-bool
+IPCResult
 NodeChild::RecvPong()
 {
   printf("Pong!\n");
-  return true;
+  return IPC_OK();
 }
 
 } // namespace node

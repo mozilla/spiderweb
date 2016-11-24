@@ -190,7 +190,7 @@ GeckoChildProcessHost::GetPathToBinary(FilePath& exePath, GeckoProcessType proce
 #endif
     exePath = exePath.DirName();
     exePath = exePath.AppendASCII("spiderweb");
-    return;
+    return BinaryPathType::Node;
   }
 
   if (ShouldHaveDirectoryService()) {

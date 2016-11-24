@@ -13,7 +13,7 @@ namespace node {
 class NodeChild : public PNodeChild
 {
 public:
-  virtual bool RecvPong();
+  virtual mozilla::ipc::IPCResult RecvPong();
 
   MOZ_IMPLICIT NodeChild();
   virtual ~NodeChild();

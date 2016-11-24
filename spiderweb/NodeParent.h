@@ -29,7 +29,7 @@ public:
 private:
   NodeProcessParent* mProcess;
 
-  virtual bool
+  virtual mozilla::ipc::IPCResult
   RecvPing();
 
   virtual void
