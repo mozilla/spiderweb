@@ -396,6 +396,11 @@ public:
   }
 
   void
+  RequestErrorSteps(const ProgressEventType aEventType,
+                    const nsresult aOptionalException,
+                    ErrorResult& aRv);
+
+  void
   Abort() {
     ErrorResult rv;
     Abort(rv);
@@ -709,6 +714,18 @@ protected:
   nsCOMPtr<nsITimer> mTimeoutTimer;
   void StartTimeoutTimer();
   void HandleTimeoutCallback();
+
+  nsCOMPtr<nsITimer> mSyncTimeoutTimer;
+
+  enum SyncTimeoutType {
+    eErrorOrExpired,
+    eTimerStarted,
+    eNoTimerNeeded
+  };
+
+  SyncTimeoutType MaybeStartSyncTimeoutTimer();
+  void HandleSyncTimeoutTimer();
+  void CancelSyncTimeoutTimer();
 
   bool mErrorLoad;
   bool mErrorParsingXML;

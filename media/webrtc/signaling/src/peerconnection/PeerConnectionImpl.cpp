@@ -95,7 +95,7 @@
 #include "nsIScriptGlobalObject.h"
 #include "MediaStreamGraph.h"
 #include "DOMMediaStream.h"
-#include "rlogringbuffer.h"
+#include "rlogconnector.h"
 #include "WebrtcGlobalInformation.h"
 #include "mozilla/dom/Event.h"
 #include "nsIDOMCustomEvent.h"
@@ -347,7 +347,7 @@ PeerConnectionImpl::PeerConnectionImpl(const GlobalObject* aGlobal)
 {
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
   MOZ_ASSERT(NS_IsMainThread());
-  auto log = RLogRingBuffer::CreateInstance();
+  auto log = RLogConnector::CreateInstance();
   if (aGlobal) {
     mWindow = do_QueryInterface(aGlobal->GetAsSupports());
     if (IsPrivateBrowsing(mWindow)) {
@@ -381,7 +381,7 @@ PeerConnectionImpl::~PeerConnectionImpl()
   PC_AUTO_ENTER_API_CALL_NO_CHECK();
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
   if (mPrivateWindow) {
-    auto * log = RLogRingBuffer::GetInstance();
+    auto * log = RLogConnector::GetInstance();
     if (log) {
       log->ExitPrivateMode();
     }
@@ -479,9 +479,6 @@ PeerConnectionConfiguration::Init(const RTCConfiguration& aSrc)
   }
 
   switch (aSrc.mIceTransportPolicy) {
-    case dom::RTCIceTransportPolicy::None:
-      setIceTransportPolicy(NrIceCtx::ICE_POLICY_NONE);
-      break;
     case dom::RTCIceTransportPolicy::Relay:
       setIceTransportPolicy(NrIceCtx::ICE_POLICY_RELAY);
       break;
@@ -2549,6 +2546,11 @@ PeerConnectionImpl::InsertDTMF(mozilla::dom::RTCRtpSender& sender,
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
   PC_AUTO_ENTER_API_CALL(false);
 
+  // Check values passed in from PeerConnection.js
+  MOZ_ASSERT(duration >= 40, "duration must be at least 40");
+  MOZ_ASSERT(duration <= 6000, "duration must be at most 6000");
+  MOZ_ASSERT(interToneGap >= 30, "interToneGap must be at least 30");
+
   JSErrorResult jrv;
 
   // Retrieve track
@@ -2836,13 +2838,12 @@ PeerConnectionImpl::CalculateFingerprint(
     std::vector<uint8_t>* fingerprint) const {
   uint8_t buf[DtlsIdentity::HASH_ALGORITHM_MAX_LENGTH];
   size_t len = 0;
-  CERTCertificate* cert;
 
   MOZ_ASSERT(fingerprint);
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
-  cert = mCertificate->Certificate();
+  const UniqueCERTCertificate& cert = mCertificate->Certificate();
 #else
-  cert = mIdentity->cert();
+  const UniqueCERTCertificate& cert = mIdentity->cert();
 #endif
   nsresult rv = DtlsIdentity::ComputeFingerprint(cert, algorithm,
                                                  &buf[0], sizeof(buf),
@@ -3291,10 +3292,16 @@ toDomIceConnectionState(NrIceCtx::ConnectionState state) {
       return PCImplIceConnectionState::New;
     case NrIceCtx::ICE_CTX_CHECKING:
       return PCImplIceConnectionState::Checking;
-    case NrIceCtx::ICE_CTX_OPEN:
+    case NrIceCtx::ICE_CTX_CONNECTED:
       return PCImplIceConnectionState::Connected;
+    case NrIceCtx::ICE_CTX_COMPLETED:
+      return PCImplIceConnectionState::Completed;
     case NrIceCtx::ICE_CTX_FAILED:
       return PCImplIceConnectionState::Failed;
+    case NrIceCtx::ICE_CTX_DISCONNECTED:
+      return PCImplIceConnectionState::Disconnected;
+    case NrIceCtx::ICE_CTX_CLOSED:
+      return PCImplIceConnectionState::Closed;
   }
   MOZ_CRASH();
 }
@@ -3399,8 +3406,7 @@ static bool isSucceeded(PCImplIceConnectionState state) {
 }
 
 static bool isFailed(PCImplIceConnectionState state) {
-  return state == PCImplIceConnectionState::Failed ||
-         state == PCImplIceConnectionState::Disconnected;
+  return state == PCImplIceConnectionState::Failed;
 }
 #endif
 
@@ -3412,6 +3418,11 @@ void PeerConnectionImpl::IceConnectionStateChange(
   CSFLogDebug(logTag, "%s", __FUNCTION__);
 
   auto domState = toDomIceConnectionState(state);
+  if (domState == mIceConnectionState) {
+    // no work to be done since the states are the same.
+    // this can happen during ICE rollback situations.
+    return;
+  }
 
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
   if (!isDone(mIceConnectionState) && isDone(domState)) {

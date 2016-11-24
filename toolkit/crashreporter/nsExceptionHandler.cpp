@@ -11,6 +11,7 @@
 #include "nsDataHashtable.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/CrashReporterChild.h"
+#include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/Services.h"
 #include "nsIObserverService.h"
 #include "mozilla/Unused.h"
@@ -116,6 +117,7 @@ using google_breakpad::PageAllocator;
 using namespace mozilla;
 using mozilla::dom::CrashReporterChild;
 using mozilla::dom::PCrashReporterChild;
+using mozilla::ipc::CrashReporterClient;
 
 namespace CrashReporter {
 
@@ -290,8 +292,14 @@ static char* childCrashNotifyPipe;
 #  elif defined(XP_LINUX)
 static int serverSocketFd = -1;
 static int clientSocketFd = -1;
-static const int kMagicChildCrashReportFd = 4;
-
+static int gMagicChildCrashReportFd =
+#    if defined(MOZ_WIDGET_ANDROID)
+// On android the fd is set at the time of child creation.
+-1
+#    else
+4
+#    endif // defined(MOZ_WIDGET_ANDROID)
+;
 #  endif
 
 // |dumpMapLock| must protect all access to |pidToMinidump|.
@@ -521,7 +529,7 @@ CreatePathFromFile(nsIFile* file)
   if (NS_FAILED(rv)) {
     return nullptr;
   }
-  return new xpstring(path.get(), path.Length());
+  return new xpstring(static_cast<wchar_t*>(path.get()), path.Length());
 }
 #else
 static void
@@ -556,13 +564,6 @@ Concat(XP_CHAR* str, const XP_CHAR* toAppend, int* size)
   return str;
 }
 
-static const char* gMozCrashReason = nullptr;
-
-void AnnotateMozCrashReason(const char* aReason)
-{
-  gMozCrashReason = aReason;
-}
-
 static size_t gOOMAllocationSize = 0;
 
 void AnnotateOOMAllocationSize(size_t size)
@@ -575,6 +576,22 @@ static size_t gTexturesSize = 0;
 void AnnotateTexturesSize(size_t size)
 {
   gTexturesSize = size;
+}
+
+static size_t gNumOfPendingIPC = 0;
+static uint32_t gTopPendingIPCCount = 0;
+static const char* gTopPendingIPCName = nullptr;
+static uint32_t gTopPendingIPCType = 0;
+
+void AnnotatePendingIPC(size_t aNumOfPendingIPC,
+                        uint32_t aTopPendingIPCCount,
+                        const char* aTopPendingIPCName,
+                        uint32_t aTopPendingIPCType)
+{
+  gNumOfPendingIPC = aNumOfPendingIPC;
+  gTopPendingIPCCount = aTopPendingIPCCount;
+  gTopPendingIPCName = aTopPendingIPCName;
+  gTopPendingIPCType = aTopPendingIPCType;
 }
 
 #ifndef XP_WIN
@@ -878,6 +895,19 @@ bool MinidumpCallback(
     XP_STOA(gTexturesSize, texturesSizeBuffer, 10);
   }
 
+  char numOfPendingIPCBuffer[32] = "";
+  char topPendingIPCCountBuffer[32] = "";
+  char topPendingIPCTypeBuffer[11] = "0x";
+  if (gNumOfPendingIPC) {
+    XP_STOA(gNumOfPendingIPC, numOfPendingIPCBuffer, 10);
+    if (gTopPendingIPCCount) {
+      XP_STOA(gTopPendingIPCCount, topPendingIPCCountBuffer, 10);
+    }
+    if (gTopPendingIPCType) {
+      XP_STOA(gTopPendingIPCType, &topPendingIPCTypeBuffer[2], 16);
+    }
+  }
+
   // calculate time since last crash (if possible), and store
   // the time of this crash.
   time_t crashTime;
@@ -1024,6 +1054,23 @@ bool MinidumpCallback(
     if (texturesSizeBuffer[0]) {
       WriteAnnotation(apiData, "TextureUsage", texturesSizeBuffer);
       WriteAnnotation(eventFile, "TextureUsage", texturesSizeBuffer);
+    }
+
+    if (numOfPendingIPCBuffer[0]) {
+      WriteAnnotation(apiData, "NumberOfPendingIPC", numOfPendingIPCBuffer);
+      WriteAnnotation(eventFile, "NumberOfPendingIPC", numOfPendingIPCBuffer);
+      if (topPendingIPCCountBuffer[0]) {
+        WriteAnnotation(apiData, "TopPendingIPCCount", topPendingIPCCountBuffer);
+        WriteAnnotation(eventFile, "TopPendingIPCCount", topPendingIPCCountBuffer);
+      }
+      if (gTopPendingIPCName) {
+        WriteAnnotation(apiData, "TopPendingIPCName", gTopPendingIPCName);
+        WriteAnnotation(eventFile, "TopPendingIPCName", gTopPendingIPCName);
+      }
+      if (topPendingIPCTypeBuffer[2]) {
+        WriteAnnotation(apiData, "TopPendingIPCType", topPendingIPCTypeBuffer);
+        WriteAnnotation(eventFile, "TopPendingIPCType", topPendingIPCTypeBuffer);
+      }
     }
 
     if (memoryReportPath) {
@@ -1311,6 +1358,32 @@ PrepareChildExceptionTimeAnnotations()
 
   if (gMozCrashReason) {
     WriteAnnotation(apiData, "MozCrashReason", gMozCrashReason);
+  }
+
+  char numOfPendingIPCBuffer[32] = "";
+  char topPendingIPCCountBuffer[32] = "";
+  char topPendingIPCTypeBuffer[11] = "0x";
+  if (gNumOfPendingIPC) {
+    XP_STOA(gNumOfPendingIPC, numOfPendingIPCBuffer, 10);
+    if (gTopPendingIPCCount) {
+      XP_STOA(gTopPendingIPCCount, topPendingIPCCountBuffer, 10);
+    }
+    if (gTopPendingIPCType) {
+      XP_STOA(gTopPendingIPCType, &topPendingIPCTypeBuffer[2], 16);
+    }
+  }
+
+  if (numOfPendingIPCBuffer[0]) {
+    WriteAnnotation(apiData, "NumberOfPendingIPC", numOfPendingIPCBuffer);
+    if (topPendingIPCCountBuffer[0]) {
+      WriteAnnotation(apiData, "TopPendingIPCCount", topPendingIPCCountBuffer);
+    }
+    if (gTopPendingIPCName) {
+      WriteAnnotation(apiData, "TopPendingIPCName", gTopPendingIPCName);
+    }
+    if (topPendingIPCTypeBuffer[2]) {
+      WriteAnnotation(apiData, "TopPendingIPCType", topPendingIPCTypeBuffer);
+    }
   }
 }
 
@@ -2154,20 +2227,27 @@ nsresult AnnotateCrashReport(const nsACString& key, const nsACString& data)
   if (!GetEnabled())
     return NS_ERROR_NOT_INITIALIZED;
 
-  bool isParentProcess = XRE_IsParentProcess();
-  if (!isParentProcess && !NS_IsMainThread()) {
-    // Child process needs to handle this in the main thread:
-    nsCOMPtr<nsIRunnable> r = new CrashReporterHelperRunnable(key, data);
-    NS_DispatchToMainThread(r);
-    return NS_OK;
-  }
-
   nsCString escapedData;
   nsresult rv = EscapeAnnotation(key, data, escapedData);
   if (NS_FAILED(rv))
     return rv;
 
-  if (!isParentProcess) {
+  if (!XRE_IsParentProcess()) {
+    // The newer CrashReporterClient can be used from any thread.
+    if (RefPtr<CrashReporterClient> client = CrashReporterClient::GetSingleton()) {
+      client->AnnotateCrashReport(nsCString(key), escapedData);
+      return NS_OK;
+    }
+
+    // Otherwise, we have to handle this on the main thread since we will go
+    // through IPDL.
+    if (!NS_IsMainThread()) {
+      // Child process needs to handle this in the main thread:
+      nsCOMPtr<nsIRunnable> r = new CrashReporterHelperRunnable(key, data);
+      NS_DispatchToMainThread(r);
+      return NS_OK;
+    }
+
     MOZ_ASSERT(NS_IsMainThread());
     PCrashReporterChild* reporter = CrashReporterChild::GetCrashReporter();
     if (!reporter) {
@@ -2232,22 +2312,7 @@ nsresult AppendAppNotesToCrashReport(const nsACString& data)
   if (DoFindInReadable(data, NS_LITERAL_CSTRING("\0")))
     return NS_ERROR_INVALID_ARG;
 
-  bool isParentProcess = XRE_IsParentProcess();
-  if (!isParentProcess && !NS_IsMainThread()) {
-    // Child process needs to handle this in the main thread:
-    nsCOMPtr<nsIRunnable> r = new CrashReporterHelperRunnable(data);
-    NS_DispatchToMainThread(r);
-    return NS_OK;
-  }
-
   if (!XRE_IsParentProcess()) {
-    MOZ_ASSERT(NS_IsMainThread());
-    PCrashReporterChild* reporter = CrashReporterChild::GetCrashReporter();
-    if (!reporter) {
-      EnqueueDelayedNote(new DelayedNote(data));
-      return NS_OK;
-    }
-
     // Since we don't go through AnnotateCrashReport in the parent process,
     // we must ensure that the data is escaped and valid before the parent
     // sees it.
@@ -2255,6 +2320,25 @@ nsresult AppendAppNotesToCrashReport(const nsACString& data)
     nsresult rv = EscapeAnnotation(NS_LITERAL_CSTRING("Notes"), data, escapedData);
     if (NS_FAILED(rv))
       return rv;
+
+    if (RefPtr<CrashReporterClient> client = CrashReporterClient::GetSingleton()) {
+      client->AppendAppNotes(escapedData);
+      return NS_OK;
+    }
+
+    if (!NS_IsMainThread()) {
+      // Child process needs to handle this in the main thread:
+      nsCOMPtr<nsIRunnable> r = new CrashReporterHelperRunnable(data);
+      NS_DispatchToMainThread(r);
+      return NS_OK;
+    }
+
+    MOZ_ASSERT(NS_IsMainThread());
+    PCrashReporterChild* reporter = CrashReporterChild::GetCrashReporter();
+    if (!reporter) {
+      EnqueueDelayedNote(new DelayedNote(data));
+      return NS_OK;
+    }
 
     if (!reporter->SendAppendAppNotes(escapedData))
       return NS_ERROR_FAILURE;
@@ -3644,7 +3728,7 @@ CreateNotificationPipeForChild(int* childCrashFd, int* childCrashRemapFd)
   MOZ_ASSERT(OOPInitialized());
 
   *childCrashFd = clientSocketFd;
-  *childCrashRemapFd = kMagicChildCrashReportFd;
+  *childCrashRemapFd = gMagicChildCrashReportFd;
 
   return true;
 }
@@ -3664,7 +3748,7 @@ SetRemoteExceptionHandler()
                      nullptr,    // no minidump callback
                      nullptr,    // no callback context
                      true,       // install signal handlers
-                     kMagicChildCrashReportFd);
+                     gMagicChildCrashReportFd);
 
   if (gDelayedAnnotations) {
     for (uint32_t i = 0; i < gDelayedAnnotations->Length(); i++) {
@@ -4018,6 +4102,11 @@ UnsetRemoteExceptionHandler()
 }
 
 #if defined(MOZ_WIDGET_ANDROID)
+void SetNotificationPipeForChild(int childCrashFd)
+{
+  gMagicChildCrashReportFd = childCrashFd;
+}
+
 void AddLibraryMapping(const char* library_name,
                        uintptr_t   start_address,
                        size_t      mapping_length,

@@ -14,6 +14,7 @@
 #include "InputData.h"                  // for InputData, etc
 #include "Layers.h"                     // for Layer, etc
 #include "mozilla/dom/Touch.h"          // for Touch
+#include "mozilla/gfx/GPUParent.h"      // for GPUParent
 #include "mozilla/gfx/Logging.h"        // for gfx::TreeLog
 #include "mozilla/gfx/Point.h"          // for Point
 #include "mozilla/layers/APZThreadUtils.h"  // for AssertOnCompositorThread, etc
@@ -55,10 +56,10 @@ typedef mozilla::gfx::Matrix4x4 Matrix4x4;
 float APZCTreeManager::sDPI = 160.0;
 
 struct APZCTreeManager::TreeBuildingState {
-  TreeBuildingState(CompositorBridgeParent* aCompositor,
+  TreeBuildingState(const CompositorBridgeParent::LayerTreeState* const aLayerTreeState,
                     bool aIsFirstPaint, uint64_t aOriginatingLayersId,
                     APZTestData* aTestData, uint32_t aPaintSequence)
-    : mCompositor(aCompositor)
+    : mLayerTreeState(aLayerTreeState)
     , mIsFirstPaint(aIsFirstPaint)
     , mOriginatingLayersId(aOriginatingLayersId)
     , mPaintLogger(aTestData, aPaintSequence)
@@ -66,7 +67,7 @@ struct APZCTreeManager::TreeBuildingState {
   }
 
   // State that doesn't change as we recurse in the tree building
-  CompositorBridgeParent* const mCompositor;
+  const CompositorBridgeParent::LayerTreeState* const mLayerTreeState;
   const bool mIsFirstPaint;
   const uint64_t mOriginatingLayersId;
   const APZPaintLogHelper mPaintLogger;
@@ -84,6 +85,76 @@ struct APZCTreeManager::TreeBuildingState {
   std::map<ScrollableLayerGuid, AsyncPanZoomController*> mApzcMap;
 };
 
+class APZCTreeManager::CheckerboardFlushObserver : public nsIObserver {
+public:
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIOBSERVER
+
+  explicit CheckerboardFlushObserver(APZCTreeManager* aTreeManager)
+    : mTreeManager(aTreeManager)
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+    nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+    MOZ_ASSERT(obsSvc);
+    if (obsSvc) {
+      obsSvc->AddObserver(this, "APZ:FlushActiveCheckerboard", false);
+    }
+  }
+
+  void Unregister()
+  {
+    MOZ_ASSERT(NS_IsMainThread());
+    nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+    if (obsSvc) {
+      obsSvc->RemoveObserver(this, "APZ:FlushActiveCheckerboard");
+    }
+    mTreeManager = nullptr;
+  }
+
+protected:
+  virtual ~CheckerboardFlushObserver() {}
+
+private:
+  RefPtr<APZCTreeManager> mTreeManager;
+};
+
+NS_IMPL_ISUPPORTS(APZCTreeManager::CheckerboardFlushObserver, nsIObserver)
+
+NS_IMETHODIMP
+APZCTreeManager::CheckerboardFlushObserver::Observe(nsISupports* aSubject,
+                                                    const char* aTopic,
+                                                    const char16_t*)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(mTreeManager.get());
+
+  MutexAutoLock lock(mTreeManager->mTreeLock);
+  if (mTreeManager->mRootNode) {
+    ForEachNode<ReverseIterator>(mTreeManager->mRootNode.get(),
+        [](HitTestingTreeNode* aNode)
+        {
+          if (aNode->IsPrimaryHolder()) {
+            MOZ_ASSERT(aNode->GetApzc());
+            aNode->GetApzc()->FlushActiveCheckerboardReport();
+          }
+        });
+  }
+  if (XRE_IsGPUProcess()) {
+    if (gfx::GPUParent* gpu = gfx::GPUParent::GetSingleton()) {
+      nsCString topic("APZ:FlushActiveCheckerboard:Done");
+      Unused << gpu->SendNotifyUiObservers(topic);
+    }
+  } else {
+    MOZ_ASSERT(XRE_IsParentProcess());
+    nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
+    if (obsSvc) {
+      obsSvc->NotifyObservers(nullptr, "APZ:FlushActiveCheckerboard:Done", nullptr);
+    }
+  }
+  return NS_OK;
+}
+
+
 /*static*/ const ScreenMargin
 APZCTreeManager::CalculatePendingDisplayPort(
   const FrameMetrics& aFrameMetrics,
@@ -100,6 +171,10 @@ APZCTreeManager::APZCTreeManager()
       mRetainedTouchIdentifier(-1),
       mApzcTreeLog("apzctree")
 {
+  RefPtr<APZCTreeManager> self(this);
+  NS_DispatchToMainThread(NS_NewRunnableFunction([self] {
+    self->mFlushObserver = new CheckerboardFlushObserver(self);
+  }));
   AsyncPanZoomController::InitializeGlobalState();
   mApzcTreeLog.ConditionOnPrefFunction(gfxPrefs::APZPrintTree);
 }
@@ -137,7 +212,7 @@ APZCTreeManager::SetAllowedTouchBehavior(uint64_t aInputBlockId,
 }
 
 void
-APZCTreeManager::UpdateHitTestingTree(CompositorBridgeParent* aCompositor,
+APZCTreeManager::UpdateHitTestingTree(uint64_t aRootLayerTreeId,
                                       Layer* aRoot,
                                       bool aIsFirstPaint,
                                       uint64_t aOriginatingLayersId,
@@ -157,7 +232,10 @@ APZCTreeManager::UpdateHitTestingTree(CompositorBridgeParent* aCompositor,
     }
   }
 
-  TreeBuildingState state(aCompositor, aIsFirstPaint, aOriginatingLayersId,
+  const CompositorBridgeParent::LayerTreeState* treeState =
+    CompositorBridgeParent::GetIndirectShadowTree(aRootLayerTreeId);
+  MOZ_ASSERT(treeState);
+  TreeBuildingState state(treeState, aIsFirstPaint, aOriginatingLayersId,
                           testData, aPaintSequenceNumber);
 
   // We do this business with collecting the entire tree into an array because otherwise
@@ -184,9 +262,7 @@ APZCTreeManager::UpdateHitTestingTree(CompositorBridgeParent* aCompositor,
     std::stack<gfx::Matrix4x4> ancestorTransforms;
     HitTestingTreeNode* parent = nullptr;
     HitTestingTreeNode* next = nullptr;
-
-    // aCompositor is null in gtest scenarios
-    uint64_t layersId = aCompositor ? aCompositor->RootLayerTreeId() : 0;
+    uint64_t layersId = aRootLayerTreeId;
     ancestorTransforms.push(Matrix4x4());
 
     mApzcTreeLog << "[start]\n";
@@ -474,10 +550,13 @@ APZCTreeManager::PrepareNodeForLayer(const LayerMetricsWrapper& aLayer,
     // a destroyed APZC and so we need to throw that out and make a new one.
     bool newApzc = (apzc == nullptr || apzc->IsDestroyed());
     if (newApzc) {
+      MOZ_ASSERT(aState.mLayerTreeState);
       apzc = NewAPZCInstance(aLayersId, state->mController);
-      apzc->SetCompositorBridgeParent(aState.mCompositor);
-      if (state->mCrossProcessParent != nullptr) {
-        apzc->ShareFrameMetricsAcrossProcesses();
+      apzc->SetCompositorController(aState.mLayerTreeState->GetCompositorController());
+      if (state->mCrossProcessParent) {
+        apzc->SetMetricsSharingController(state->CrossProcessSharingController());
+      } else {
+        apzc->SetMetricsSharingController(aState.mLayerTreeState->InProcessSharingController());
       }
       MOZ_ASSERT(node == nullptr);
       node = new HitTestingTreeNode(apzc, true, aLayersId);
@@ -1275,6 +1354,12 @@ APZCTreeManager::ClearTree()
     nodesToDestroy[i]->Destroy();
   }
   mRootNode = nullptr;
+
+  RefPtr<APZCTreeManager> self(this);
+  NS_DispatchToMainThread(NS_NewRunnableFunction([self] {
+    self->mFlushObserver->Unregister();
+    self->mFlushObserver = nullptr;
+  }));
 }
 
 RefPtr<HitTestingTreeNode>

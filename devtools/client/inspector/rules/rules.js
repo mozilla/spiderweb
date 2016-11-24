@@ -3,7 +3,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* globals gDevTools */
 
 "use strict";
 
@@ -18,16 +17,22 @@ const {PrefObserver, PREF_ORIG_SOURCES} = require("devtools/client/styleeditor/u
 const {ElementStyle} = require("devtools/client/inspector/rules/models/element-style");
 const {Rule} = require("devtools/client/inspector/rules/models/rule");
 const {RuleEditor} = require("devtools/client/inspector/rules/views/rule-editor");
-const {createChild, promiseWarn, throttle} = require("devtools/client/inspector/shared/utils");
 const {gDevTools} = require("devtools/client/framework/devtools");
 const {getCssProperties} = require("devtools/shared/fronts/css-properties");
-
-const overlays = require("devtools/client/inspector/shared/style-inspector-overlays");
-const EventEmitter = require("devtools/shared/event-emitter");
+const HighlightersOverlay = require("devtools/client/inspector/shared/highlighters-overlay");
+const {
+  VIEW_NODE_SELECTOR_TYPE,
+  VIEW_NODE_PROPERTY_TYPE,
+  VIEW_NODE_VALUE_TYPE,
+  VIEW_NODE_IMAGE_URL_TYPE,
+  VIEW_NODE_LOCATION_TYPE,
+} = require("devtools/client/inspector/shared/node-types");
 const StyleInspectorMenu = require("devtools/client/inspector/shared/style-inspector-menu");
+const TooltipsOverlay = require("devtools/client/inspector/shared/tooltips-overlay");
+const {createChild, promiseWarn, throttle} = require("devtools/client/inspector/shared/utils");
+const EventEmitter = require("devtools/shared/event-emitter");
 const {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
 const clipboardHelper = require("devtools/shared/platform/clipboard");
-
 const {AutocompletePopup} = require("devtools/client/shared/autocomplete-popup");
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -170,9 +175,9 @@ function CssRuleView(inspector, document, store, pageStyle) {
   this._contextmenu = new StyleInspectorMenu(this, { isRuleView: true });
 
   // Add the tooltips and highlighters to the view
-  this.tooltips = new overlays.TooltipsOverlay(this);
+  this.tooltips = new TooltipsOverlay(this);
   this.tooltips.addToView();
-  this.highlighters = new overlays.HighlightersOverlay(this);
+  this.highlighters = new HighlightersOverlay(this);
   this.highlighters.addToView();
 
   EventEmitter.decorate(this);
@@ -207,6 +212,10 @@ CssRuleView.prototype = {
    * @return {Promise} Resolves to the instance of the highlighter.
    */
   getSelectorHighlighter: Task.async(function* () {
+    if (!this.inspector) {
+      return null;
+    }
+
     let utils = this.inspector.toolbox.highlighterUtils;
     if (!utils.supportsCustomHighlighters()) {
       return null;
@@ -250,27 +259,27 @@ CssRuleView.prototype = {
     selectorIcon.classList.remove("highlighted");
 
     this.unhighlightSelector().then(() => {
-      if (selector !== this.highlightedSelector) {
-        this.highlightedSelector = selector;
+      if (selector !== this.highlighters.selectorHighlighterShown) {
+        this.highlighters.selectorHighlighterShown = selector;
         selectorIcon.classList.add("highlighted");
         this.lastSelectorIcon = selectorIcon;
         this.highlightSelector(selector).then(() => {
           this.emit("ruleview-selectorhighlighter-toggled", true);
         }, e => console.error(e));
       } else {
-        this.highlightedSelector = null;
+        this.highlighters.selectorHighlighterShown = null;
         this.emit("ruleview-selectorhighlighter-toggled", false);
       }
     }, e => console.error(e));
   },
 
   highlightSelector: Task.async(function* (selector) {
-    let node = this.inspector.selection.nodeFront;
-
     let highlighter = yield this.getSelectorHighlighter();
     if (!highlighter) {
       return;
     }
+
+    let node = this.inspector.selection.nodeFront;
 
     yield highlighter.show(node, {
       hideInfoBar: true,
@@ -295,7 +304,7 @@ CssRuleView.prototype = {
    *        The node which we want information about
    * @return {Object} The type information object contains the following props:
    * - type {String} One of the VIEW_NODE_XXX_TYPE const in
-   *   style-inspector-overlays
+   *   client/inspector/shared/node-types
    * - value {Object} Depends on the type of the node
    * returns null of the node isn't anything we care about
    */
@@ -309,7 +318,7 @@ CssRuleView.prototype = {
     let prop = getParentTextProperty(node);
 
     if (classes.contains("ruleview-propertyname") && prop) {
-      type = overlays.VIEW_NODE_PROPERTY_TYPE;
+      type = VIEW_NODE_PROPERTY_TYPE;
       value = {
         property: node.textContent,
         value: getPropertyNameAndValue(node).value,
@@ -320,7 +329,7 @@ CssRuleView.prototype = {
         textProperty: prop
       };
     } else if (classes.contains("ruleview-propertyvalue") && prop) {
-      type = overlays.VIEW_NODE_VALUE_TYPE;
+      type = VIEW_NODE_VALUE_TYPE;
       value = {
         property: getPropertyNameAndValue(node).name,
         value: node.textContent,
@@ -332,7 +341,7 @@ CssRuleView.prototype = {
       };
     } else if (classes.contains("theme-link") &&
                !classes.contains("ruleview-rule-source") && prop) {
-      type = overlays.VIEW_NODE_IMAGE_URL_TYPE;
+      type = VIEW_NODE_IMAGE_URL_TYPE;
       value = {
         property: getPropertyNameAndValue(node).name,
         value: node.parentNode.textContent,
@@ -350,11 +359,11 @@ CssRuleView.prototype = {
                classes.contains("ruleview-selector-attribute") ||
                classes.contains("ruleview-selector-pseudo-class") ||
                classes.contains("ruleview-selector-pseudo-class-lock")) {
-      type = overlays.VIEW_NODE_SELECTOR_TYPE;
+      type = VIEW_NODE_SELECTOR_TYPE;
       value = this._getRuleEditorForNode(node).selectorText.textContent;
     } else if (classes.contains("ruleview-rule-source") ||
                classes.contains("ruleview-rule-source-label")) {
-      type = overlays.VIEW_NODE_LOCATION_TYPE;
+      type = VIEW_NODE_LOCATION_TYPE;
       let rule = this._getRuleEditorForNode(node).rule;
       value = (rule.sheet && rule.sheet.href) ? rule.sheet.href : rule.title;
     } else {
@@ -1500,15 +1509,15 @@ function RuleViewTool(inspector, window) {
 
   this.view = new CssRuleView(this.inspector, this.document);
 
-  this.onLinkClicked = this.onLinkClicked.bind(this);
-  this.onSelected = this.onSelected.bind(this);
-  this.refresh = this.refresh.bind(this);
   this.clearUserProperties = this.clearUserProperties.bind(this);
-  this.onPropertyChanged = this.onPropertyChanged.bind(this);
-  this.onViewRefreshed = this.onViewRefreshed.bind(this);
-  this.onPanelSelected = this.onPanelSelected.bind(this);
+  this.refresh = this.refresh.bind(this);
+  this.onLinkClicked = this.onLinkClicked.bind(this);
   this.onMutations = this.onMutations.bind(this);
+  this.onPanelSelected = this.onPanelSelected.bind(this);
+  this.onPropertyChanged = this.onPropertyChanged.bind(this);
   this.onResized = this.onResized.bind(this);
+  this.onSelected = this.onSelected.bind(this);
+  this.onViewRefreshed = this.onViewRefreshed.bind(this);
 
   this.view.on("ruleview-changed", this.onPropertyChanged);
   this.view.on("ruleview-refreshed", this.onViewRefreshed);

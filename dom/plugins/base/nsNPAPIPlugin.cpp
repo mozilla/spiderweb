@@ -185,32 +185,14 @@ enum eNPPStreamTypeInternal {
   eNPPStreamTypeInternal_Post
 };
 
-PRIntervalTime NS_NotifyBeginPluginCall(NSPluginCallReentry aReentryState)
+void NS_NotifyBeginPluginCall(NSPluginCallReentry aReentryState)
 {
   nsNPAPIPluginInstance::BeginPluginCall(aReentryState);
-  return PR_IntervalNow();
 }
 
-// This function sends a notification using the observer service to any object
-// registered to listen to the "experimental-notify-plugin-call" subject.
-// Each "experimental-notify-plugin-call" notification carries with it the run
-// time value in milliseconds that the call took to execute.
-void NS_NotifyPluginCall(PRIntervalTime startTime, NSPluginCallReentry aReentryState)
+void NS_NotifyPluginCall(NSPluginCallReentry aReentryState)
 {
   nsNPAPIPluginInstance::EndPluginCall(aReentryState);
-
-  PRIntervalTime endTime = PR_IntervalNow() - startTime;
-  nsCOMPtr<nsIObserverService> notifyUIService =
-    mozilla::services::GetObserverService();
-  if (!notifyUIService)
-    return;
-
-  float runTimeInSeconds = float(endTime) / PR_TicksPerSecond();
-  nsAutoString runTimeString;
-  runTimeString.AppendFloat(runTimeInSeconds);
-  const char16_t* runTime = runTimeString.get();
-  notifyUIService->NotifyObservers(nullptr, "experimental-notify-plugin-call",
-                                   runTime);
 }
 
 static void CheckClassInitialized()
@@ -484,9 +466,9 @@ class nsPluginThreadRunnable : public Runnable,
 public:
   nsPluginThreadRunnable(NPP instance, PluginThreadCallback func,
                          void *userData);
-  virtual ~nsPluginThreadRunnable();
+  ~nsPluginThreadRunnable() override;
 
-  NS_IMETHOD Run();
+  NS_IMETHOD Run() override;
 
   bool IsForInstance(NPP instance)
   {
@@ -742,23 +724,6 @@ _geturl(NPP npp, const char* relativeURL, const char* target)
 
   PluginDestructionGuard guard(npp);
 
-  // Block Adobe Acrobat from loading URLs that are not http:, https:,
-  // or ftp: URLs if the given target is null.
-  if (!target && relativeURL &&
-      (strncmp(relativeURL, "http:", 5) != 0) &&
-      (strncmp(relativeURL, "https:", 6) != 0) &&
-      (strncmp(relativeURL, "ftp:", 4) != 0)) {
-    nsNPAPIPluginInstance *inst = (nsNPAPIPluginInstance *) npp->ndata;
-
-    const char *name = nullptr;
-    RefPtr<nsPluginHost> host = nsPluginHost::GetInst();
-    host->GetPluginName(inst, &name);
-
-    if (name && strstr(name, "Adobe") && strstr(name, "Acrobat")) {
-      return NPERR_NO_ERROR;
-    }
-  }
-
   return MakeNewNPAPIStreamInternal(npp, relativeURL, target,
                                     eNPPStreamTypeInternal_Get);
 }
@@ -847,7 +812,7 @@ _newstream(NPP npp, NPMIMEType type, const char* target, NPStream* *result)
     nsCOMPtr<nsIOutputStream> stream;
     if (NS_SUCCEEDED(inst->NewStreamFromPlugin((const char*) type, target,
                                                getter_AddRefs(stream)))) {
-      nsNPAPIStreamWrapper* wrapper = new nsNPAPIStreamWrapper(stream, nullptr);
+      auto* wrapper = new nsNPAPIStreamWrapper(stream, nullptr);
       if (wrapper) {
         (*result) = &wrapper->mNPStream;
         err = NPERR_NO_ERROR;

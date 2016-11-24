@@ -6,6 +6,7 @@
 
 const Cu = Components.utils;
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/Preferences.jsm");
 Cu.import("resource://testing-common/ContentTaskUtils.jsm");
 
 this.EXPORTED_SYMBOLS = [ "NarrateTestUtils" ];
@@ -107,19 +108,17 @@ this.NarrateTestUtils = {
     });
   },
 
-  waitForVoiceOptions: function(window) {
-    let options = window.document.querySelector(this.VOICE_OPTIONS);
+  waitForNarrateToggle: function(window) {
+    let toggle = window.document.querySelector(this.TOGGLE);
     return ContentTaskUtils.waitForCondition(
-      () => {
-        return options.childElementCount > 1;
-      }, "voice select options populated.");
+      () => !toggle.hidden, "");
   },
 
   waitForPrefChange: function(pref) {
     return new Promise(resolve => {
       function observeChange() {
         Services.prefs.removeObserver(pref, observeChange);
-        resolve();
+        resolve(Preferences.get(pref));
       }
 
       Services.prefs.addObserver(pref, observeChange, false);

@@ -70,9 +70,17 @@ fn public_api() {
 
                 // track.data part
                 assert_eq!(match a.codec_specific {
-                    mp4::AudioCodecSpecific::ES_Descriptor(v) => {
-                        assert!(v.len() > 0);
+                    mp4::AudioCodecSpecific::ES_Descriptor(esds) => {
+                        assert_eq!(esds.audio_codec, mp4::CodecType::AAC);
+                        assert_eq!(esds.audio_sample_rate.unwrap(), 48000);
                         "ES"
+                    }
+                    mp4::AudioCodecSpecific::FLACSpecificBox(flac) => {
+                        // STREAMINFO block must be present and first.
+                        assert!(flac.blocks.len() > 0);
+                        assert!(flac.blocks[0].block_type == 0);
+                        assert!(flac.blocks[0].data.len() == 34);
+                        "FLAC"
                     }
                     mp4::AudioCodecSpecific::OpusSpecificBox(opus) => {
                         // We don't enter in here, we just check if fields are public.
@@ -85,5 +93,37 @@ fn public_api() {
             }
             Some(mp4::SampleEntry::Unknown) | None => {}
         }
+    }
+}
+
+#[test]
+fn public_cenc() {
+    let mut fd = File::open("tests/bipbop_480wp_1001kbps-cenc-video-key1-init.mp4").expect("Unknown file");
+    let mut buf = Vec::new();
+    fd.read_to_end(&mut buf).expect("File error");
+
+    let mut c = Cursor::new(&buf);
+    let mut context = mp4::MediaContext::new();
+    mp4::read_mp4(&mut c, &mut context).expect("read_mp4 failed");
+    for track in context.tracks {
+        assert_eq!(track.codec_type, mp4::CodecType::EncryptedVideo);
+    }
+
+    let system_id = vec![0x10, 0x77, 0xef, 0xec, 0xc0, 0xb2, 0x4d, 0x02, 0xac, 0xe3, 0x3c, 0x1e, 0x52, 0xe2, 0xfb, 0x4b];
+
+    let kid = vec![0x7e, 0x57, 0x1d, 0x03, 0x7e, 0x57, 0x1d, 0x03, 0x7e, 0x57, 0x1d, 0x03, 0x7e, 0x57, 0x1d, 0x11];
+
+    let pssh_box = vec![0x00, 0x00, 0x00, 0x34, 0x70, 0x73, 0x73, 0x68, 0x01, 0x00, 0x00, 0x00, 0x10, 0x77,
+                        0xef, 0xec, 0xc0, 0xb2, 0x4d, 0x02, 0xac, 0xe3, 0x3c, 0x1e, 0x52, 0xe2, 0xfb, 0x4b, 0x00, 0x00,
+                        0x00, 0x01, 0x7e, 0x57, 0x1d, 0x03, 0x7e, 0x57, 0x1d, 0x03, 0x7e, 0x57, 0x1d, 0x03, 0x7e, 0x57,
+                        0x1d, 0x11, 0x00, 0x00, 0x00, 0x00];
+
+    for pssh in context.psshs {
+        assert_eq!(pssh.system_id, system_id);
+        for kid_id in pssh.kid {
+            assert_eq!(kid_id, kid);
+        }
+        assert_eq!(pssh.data.len(), 0);
+        assert_eq!(pssh.box_content, pssh_box);
     }
 }

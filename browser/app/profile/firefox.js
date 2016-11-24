@@ -82,9 +82,15 @@ pref("app.update.checkInstallTime", true);
 // The number of days a binary is permitted to be old without checking is defined in
 // firefox-branding.js (app.update.checkInstallTime.days)
 
-// The minimum delay in seconds for the timer to fire.
-// default=2 minutes
+// The minimum delay in seconds for the timer to fire between the notification
+// of each consumer of the timer manager.
+// minimum=30 seconds, default=120 seconds, and maximum=300 seconds
 pref("app.update.timerMinimumDelay", 120);
+
+// The minimum delay in milliseconds for the first firing after startup of the timer
+// to notify consumers of the timer manager.
+// minimum=10 seconds, default=30 seconds, and maximum=120 seconds
+pref("app.update.timerFirstInterval", 30000);
 
 // App-specific update preferences
 
@@ -103,12 +109,6 @@ pref("app.update.log", false);
 // user of the failure. User initiated update checks always notify the user of
 // the failure.
 pref("app.update.backgroundMaxErrors", 10);
-
-// When |app.update.cert.requireBuiltIn| is true or not specified the
-// final certificate and all certificates the connection is redirected to before
-// the final certificate for the url specified in the |app.update.url|
-// preference must be built-in.
-pref("app.update.cert.requireBuiltIn", false);
 
 // Whether or not app updates are enabled
 pref("app.update.enabled", true);
@@ -137,9 +137,6 @@ pref("app.update.staging.enabled", true);
 pref("app.update.url", "https://aus5.mozilla.org/update/6/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%SYSTEM_CAPABILITIES%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
 // app.update.url.manual is in branding section
 // app.update.url.details is in branding section
-
-// User-settable override to app.update.url for testing purposes.
-//pref("app.update.url.override", "");
 
 // app.update.interval is in branding section
 // app.update.promptWaitTime is in branding section
@@ -379,9 +376,6 @@ pref("browser.search.hiddenOneOffs", "");
 
 pref("browser.search.reset.enabled", true);
 
-pref("browser.usedOnWindows10", false);
-pref("browser.usedOnWindows10.introURL", "https://www.mozilla.org/%LOCALE%/firefox/windows-10/welcome/?utm_source=firefox-browser&utm_medium=firefox-browser");
-
 pref("browser.sessionhistory.max_entries", 50);
 
 // Built-in default permissions.
@@ -439,8 +433,8 @@ pref("browser.tabs.drawInTitlebar", true);
 pref("browser.tabs.selectOwnerOnClose", true);
 
 pref("browser.tabs.showAudioPlayingIcon", true);
-
-pref("browser.tabs.dontfocusfordialogs", true);
+// This should match Chromium's audio indicator delay.
+pref("browser.tabs.delayHidingAudioPlayingIconMS", 3000);
 
 pref("browser.ctrlTab.previews", false);
 
@@ -1044,7 +1038,7 @@ pref("browser.taskbar.lists.refreshInSeconds", 120);
 #endif
 
 // The sync engines to use.
-pref("services.sync.registerEngines", "Bookmarks,Form,History,Password,Prefs,Tab,Addons");
+pref("services.sync.registerEngines", "Bookmarks,Form,History,Password,Prefs,Tab,Addons,ExtensionStorage");
 // Preferences to be synced by default
 pref("services.sync.prefs.sync.accessibility.blockautorefresh", true);
 pref("services.sync.prefs.sync.accessibility.browsewithcaret", true);
@@ -1128,11 +1122,7 @@ pref("services.sync.prefs.sync.xpinstall.whitelist.required", true);
 // user's tabs and bookmarks. Note this pref is also synced.
 pref("services.sync.syncedTabs.showRemoteIcons", true);
 
-#ifdef NIGHTLY_BUILD
 pref("services.sync.sendTabToDevice.enabled", true);
-#else
-pref("services.sync.sendTabToDevice.enabled", false);
-#endif
 
 // Developer edition preferences
 #ifdef MOZ_DEV_EDITION
@@ -1231,6 +1221,8 @@ pref("security.insecure_password.ui.enabled", true);
 #else
 pref("security.insecure_password.ui.enabled", false);
 #endif
+
+pref("security.insecure_field_warning.contextual.enabled", false);
 
 // 1 = allow MITM for certificate pinning checks.
 pref("security.cert_pinning.enforcement_level", 1);
@@ -1423,9 +1415,11 @@ pref("privacy.trackingprotection.introURL", "https://www.mozilla.org/%LOCALE%/fi
 #ifdef NIGHTLY_BUILD
 pref("privacy.userContext.enabled", true);
 pref("privacy.userContext.ui.enabled", true);
+pref("privacy.usercontext.about_newtab_segregation.enabled", true);
 #else
 pref("privacy.userContext.enabled", false);
 pref("privacy.userContext.ui.enabled", false);
+pref("privacy.usercontext.about_newtab_segregation.enabled", false);
 #endif
 
 #ifndef RELEASE_OR_BETA
@@ -1439,6 +1433,7 @@ pref("browser.tabs.remote.autostart.2", true);
 // For the about:tabcrashed page
 pref("browser.tabs.crashReporting.sendReport", true);
 pref("browser.tabs.crashReporting.includeURL", false);
+pref("browser.tabs.crashReporting.requestEmail", false);
 pref("browser.tabs.crashReporting.emailMe", false);
 pref("browser.tabs.crashReporting.email", "");
 
@@ -1520,8 +1515,20 @@ pref("extensions.pocket.enabled", true);
 
 pref("signon.schemeUpgrades", true);
 
-// Enable the "Simplify Page" feature in Print Preview
+// "Simplify Page" feature in Print Preview. This feature is disabled by default
+// in toolkit.
+//
+// This feature is only enabled on Nightly for Linux until bug 1306295 is fixed.
+// For non-Linux, this feature is only enabled up to early Beta.
+#ifdef UNIX_BUT_NOT_MAC
+#if defined(NIGHTLY_BUILD)
 pref("print.use_simplify_page", true);
+#endif
+#else
+#if defined(EARLY_BETA_OR_EARLIER)
+pref("print.use_simplify_page", true);
+#endif
+#endif
 
 // Space separated list of URLS that are allowed to send objects (instead of
 // only strings) through webchannels. This list is duplicated in mobile/android/app/mobile.js
@@ -1530,10 +1537,10 @@ pref("webchannel.allowObject.urlWhitelist", "https://accounts.firefox.com https:
 // Whether or not the browser should scan for unsubmitted
 // crash reports, and then show a notification for submitting
 // those reports.
-#ifdef RELEASE_OR_BETA
-pref("browser.crashReports.unsubmittedCheck.enabled", false);
-#else
+#ifdef EARLY_BETA_OR_EARLIER
 pref("browser.crashReports.unsubmittedCheck.enabled", true);
+#else
+pref("browser.crashReports.unsubmittedCheck.enabled", false);
 #endif
 
 // chancesUntilSuppress is how many times we'll show the unsubmitted

@@ -6,6 +6,9 @@
 
 #include "mozilla/ServoStyleSheet.h"
 #include "mozilla/StyleBackendType.h"
+#include "mozilla/ServoBindings.h"
+#include "mozilla/ServoCSSRuleList.h"
+#include "mozilla/dom/CSSRuleList.h"
 
 namespace mozilla {
 
@@ -21,6 +24,9 @@ ServoStyleSheet::ServoStyleSheet(css::SheetParsingMode aParsingMode,
 ServoStyleSheet::~ServoStyleSheet()
 {
   DropSheet();
+  if (mRuleList) {
+    mRuleList->DropReference();
+  }
 }
 
 bool
@@ -75,13 +81,16 @@ ServoStyleSheet::ParseSheet(const nsAString& aInput,
   NS_ENSURE_SUCCESS(rv, rv);
 
   NS_ConvertUTF16toUTF8 input(aInput);
-  mSheet = Servo_StyleSheet_FromUTF8Bytes(
-      reinterpret_cast<const uint8_t*>(input.get()), input.Length(),
-      mParsingMode,
-      reinterpret_cast<const uint8_t*>(baseString.get()), baseString.Length(),
-      base, referrer, principal).Consume();
+  mSheet = Servo_StyleSheet_FromUTF8Bytes(&input, mParsingMode, &baseString,
+                                          base, referrer, principal).Consume();
 
   return NS_OK;
+}
+
+void
+ServoStyleSheet::LoadFailed()
+{
+  mSheet = Servo_StyleSheet_Empty(mParsingMode).Consume();
 }
 
 void
@@ -103,5 +112,41 @@ ServoStyleSheet::List(FILE* aOut, int32_t aIndex) const
   MOZ_CRASH("stylo: not implemented");
 }
 #endif
+
+nsMediaList*
+ServoStyleSheet::Media()
+{
+  return nullptr;
+}
+
+nsIDOMCSSRule*
+ServoStyleSheet::GetDOMOwnerRule() const
+{
+  return nullptr;
+}
+
+CSSRuleList*
+ServoStyleSheet::GetCssRulesInternal(ErrorResult& aRv)
+{
+  if (!mRuleList) {
+    RefPtr<ServoCssRules> rawRules = Servo_StyleSheet_GetRules(mSheet).Consume();
+    mRuleList = new ServoCSSRuleList(this, rawRules.forget());
+  }
+  return mRuleList;
+}
+
+uint32_t
+ServoStyleSheet::InsertRuleInternal(const nsAString& aRule,
+                                    uint32_t aIndex, ErrorResult& aRv)
+{
+  aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
+  return 0;
+}
+
+void
+ServoStyleSheet::DeleteRuleInternal(uint32_t aIndex, ErrorResult& aRv)
+{
+  aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
+}
 
 } // namespace mozilla

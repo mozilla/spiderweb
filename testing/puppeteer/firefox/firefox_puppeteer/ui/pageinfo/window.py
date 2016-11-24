@@ -23,9 +23,6 @@ class PageInfoWindow(BaseWindow):
         'chrome://pippki/locale/pippki.properties',
     ]
 
-    def __init__(self, *args, **kwargs):
-        BaseWindow.__init__(self, *args, **kwargs)
-
     @property
     def deck(self):
         """The :class:`Deck` instance which represents the deck.
@@ -33,7 +30,7 @@ class PageInfoWindow(BaseWindow):
         :returns: Reference to the deck.
         """
         deck = self.window_element.find_element(By.ID, 'mainDeck')
-        return Deck(lambda: self.marionette, self, deck)
+        return Deck(self.marionette, self, deck)
 
     def close(self, trigger='shortcut', force=False):
         """Closes the current page info window by using the specified trigger.
@@ -58,6 +55,7 @@ class PageInfoWindow(BaseWindow):
             else:
                 raise ValueError('Unknown closing method: "%s"' % trigger)
 
-        BaseWindow.close(self, callback, force)
+        super(PageInfoWindow, self).close(callback, force)
+
 
 Windows.register_window(PageInfoWindow.window_type, PageInfoWindow)

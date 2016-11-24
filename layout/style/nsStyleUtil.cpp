@@ -8,6 +8,7 @@
 
 #include "nsIContent.h"
 #include "nsCSSProps.h"
+#include "nsContentUtils.h"
 #include "nsRuleNode.h"
 #include "nsROCSSPrimitiveValue.h"
 #include "nsStyleStruct.h"
@@ -773,7 +774,9 @@ nsStyleUtil::CSPAllowsInlineStyle(nsIContent* aContent,
 
   bool allowInlineStyle = true;
   rv = csp->GetAllowsInline(nsIContentPolicy::TYPE_STYLESHEET,
-                            nonce, aStyleText, aLineNumber,
+                            nonce,
+                            false, // aParserCreated only applies to scripts
+                            aStyleText, aLineNumber,
                             &allowInlineStyle);
   NS_ENSURE_SUCCESS(rv, false);
 

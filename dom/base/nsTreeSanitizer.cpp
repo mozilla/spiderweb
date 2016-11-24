@@ -1068,7 +1068,7 @@ nsTreeSanitizer::SanitizeStyleDeclaration(mozilla::css::Declaration* aDeclaratio
                                           nsAutoString& aRuleText)
 {
   bool didSanitize = aDeclaration->HasProperty(eCSSProperty_binding);
-  aDeclaration->RemoveProperty(eCSSProperty_binding);
+  aDeclaration->RemovePropertyByID(eCSSProperty_binding);
   aDeclaration->ToString(aRuleText);
   return didSanitize;
 }
@@ -1419,7 +1419,8 @@ nsTreeSanitizer::SanitizeChildren(nsINode* aRoot)
         nsCOMPtr<nsIContent> child; // Must keep the child alive during move
         ErrorResult rv;
         while ((child = node->GetFirstChild())) {
-          parent->InsertBefore(*child, node, rv);
+          nsCOMPtr<nsINode> refNode = node;
+          parent->InsertBefore(*child, refNode, rv);
           if (rv.Failed()) {
             break;
           }

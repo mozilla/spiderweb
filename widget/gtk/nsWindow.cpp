@@ -2146,10 +2146,7 @@ nsWindow::OnExposeEvent(cairo_t *cr)
     LayoutDeviceIntRegion region = exposeRegion;
     region.ScaleRoundOut(scale, scale);
 
-    ClientLayerManager *clientLayers =
-        (GetLayerManager()->GetBackendType() == LayersBackend::LAYERS_CLIENT)
-        ? static_cast<ClientLayerManager*>(GetLayerManager())
-        : nullptr;
+    ClientLayerManager *clientLayers = GetLayerManager()->AsClientLayerManager();
 
     if (clientLayers && mCompositorSession) {
         // We need to paint to the screen even if nothing changed, since if we
@@ -7023,12 +7020,9 @@ nsWindow::RoundsWidgetCoordinatesTo()
 void nsWindow::GetCompositorWidgetInitData(mozilla::widget::CompositorWidgetInitData* aInitData)
 {
   #ifdef MOZ_X11
-  Display* xDisplay = (Display*)GetNativeData(NS_NATIVE_COMPOSITOR_DISPLAY);
-  char* xDisplayString = XDisplayString(xDisplay);
-
   *aInitData = mozilla::widget::CompositorWidgetInitData(
                                   mXWindow,
-                                  nsCString(xDisplayString),
+                                  nsCString(XDisplayString(mXDisplay)),
                                   GetClientSize());
   #endif
 }

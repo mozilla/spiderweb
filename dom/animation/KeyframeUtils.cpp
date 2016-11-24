@@ -9,6 +9,7 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Move.h"
 #include "mozilla/RangedArray.h"
+#include "mozilla/ServoBindings.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/TimingParams.h"
 #include "mozilla/dom/BaseKeyframeTypesBinding.h" // For FastBaseKeyframe etc.
@@ -416,7 +417,8 @@ PaceRange(const Range<Keyframe>& aKeyframes,
 
 static nsTArray<double>
 GetCumulativeDistances(const nsTArray<ComputedKeyframeValues>& aValues,
-                       nsCSSPropertyID aProperty);
+                       nsCSSPropertyID aProperty,
+                       nsStyleContext* aStyleContext);
 
 // ------------------------------------------------------------------
 //
@@ -480,7 +482,8 @@ KeyframeUtils::GetKeyframesFromObject(JSContext* aCx,
 KeyframeUtils::ApplySpacing(nsTArray<Keyframe>& aKeyframes,
                             SpacingMode aSpacingMode,
                             nsCSSPropertyID aProperty,
-                            nsTArray<ComputedKeyframeValues>& aComputedValues)
+                            nsTArray<ComputedKeyframeValues>& aComputedValues,
+                            nsStyleContext* aStyleContext)
 {
   if (aKeyframes.IsEmpty()) {
     return;
@@ -491,7 +494,8 @@ KeyframeUtils::ApplySpacing(nsTArray<Keyframe>& aKeyframes,
     MOZ_ASSERT(IsAnimatableProperty(aProperty),
                "Paced property should be animatable");
 
-    cumulativeDistances = GetCumulativeDistances(aComputedValues, aProperty);
+    cumulativeDistances = GetCumulativeDistances(aComputedValues, aProperty,
+                                                 aStyleContext);
     // Reset the computed offsets if using paced spacing.
     for (Keyframe& keyframe : aKeyframes) {
       keyframe.mComputedOffset = Keyframe::kComputedOffsetNotSet;
@@ -582,7 +586,7 @@ KeyframeUtils::ApplyDistributeSpacing(nsTArray<Keyframe>& aKeyframes)
 {
   nsTArray<ComputedKeyframeValues> emptyArray;
   ApplySpacing(aKeyframes, SpacingMode::distribute, eCSSProperty_UNKNOWN,
-               emptyArray);
+               emptyArray, nullptr);
 }
 
 /* static */ nsTArray<ComputedKeyframeValues>
@@ -1006,12 +1010,9 @@ MakePropertyValuePair(nsCSSPropertyID aProperty, const nsAString& aStringValue,
     nsCString baseString;
     aDocument->GetDocumentURI()->GetSpec(baseString);
 
-    RefPtr<ServoDeclarationBlock> servoDeclarationBlock =
-      Servo_ParseProperty(
-        reinterpret_cast<const uint8_t*>(name.get()), name.Length(),
-        reinterpret_cast<const uint8_t*>(value.get()), value.Length(),
-        reinterpret_cast<const uint8_t*>(baseString.get()), baseString.Length(),
-        base, referrer, principal).Consume();
+    RefPtr<RawServoDeclarationBlock> servoDeclarationBlock =
+      Servo_ParseProperty(&name, &value, &baseString,
+                          base, referrer, principal).Consume();
 
     if (servoDeclarationBlock) {
       result.mServoDeclarationBlock = servoDeclarationBlock.forget();
@@ -1467,16 +1468,16 @@ static void
 DistributeRange(const Range<Keyframe>& aSpacingRange,
                 const Range<Keyframe>& aRangeToAdjust)
 {
-  MOZ_ASSERT(aRangeToAdjust.start() >= aSpacingRange.start() &&
+  MOZ_ASSERT(aRangeToAdjust.begin() >= aSpacingRange.begin() &&
              aRangeToAdjust.end() <= aSpacingRange.end(),
              "Out of range");
   const size_t n = aSpacingRange.length() - 1;
   const double startOffset = aSpacingRange[0].mComputedOffset;
   const double diffOffset = aSpacingRange[n].mComputedOffset - startOffset;
-  for (auto iter = aRangeToAdjust.start();
+  for (auto iter = aRangeToAdjust.begin();
        iter != aRangeToAdjust.end();
        ++iter) {
-    size_t index = iter - aSpacingRange.start();
+    size_t index = iter - aSpacingRange.begin();
     iter->mComputedOffset = startOffset + double(index) / n * diffOffset;
   }
 }
@@ -1493,7 +1494,7 @@ DistributeRange(const Range<Keyframe>& aSpacingRange)
 {
   // We don't need to apply distribute spacing to keyframe A and keyframe B.
   DistributeRange(aSpacingRange,
-                  Range<Keyframe>(aSpacingRange.start() + 1,
+                  Range<Keyframe>(aSpacingRange.begin() + 1,
                                   aSpacingRange.end() - 1));
 }
 
@@ -1524,7 +1525,7 @@ PaceRange(const Range<Keyframe>& aKeyframes,
     return;
   }
 
-  const double distA = *(aCumulativeDistances.start());
+  const double distA = *(aCumulativeDistances.begin());
   const double distB = *(aCumulativeDistances.end() - 1);
   MOZ_ASSERT(distA != kNotPaceable && distB != kNotPaceable,
              "Both Paced A and Paced B should be paceable");
@@ -1536,7 +1537,7 @@ PaceRange(const Range<Keyframe>& aKeyframes,
     return;
   }
 
-  const RangedPtr<Keyframe> pacedA = aKeyframes.start();
+  const RangedPtr<Keyframe> pacedA = aKeyframes.begin();
   const RangedPtr<Keyframe> pacedB = aKeyframes.end() - 1;
   MOZ_ASSERT(pacedA->mComputedOffset != Keyframe::kComputedOffsetNotSet &&
              pacedB->mComputedOffset != Keyframe::kComputedOffsetNotSet,
@@ -1548,7 +1549,7 @@ PaceRange(const Range<Keyframe>& aKeyframes,
   const double initialDist = distA;
   const double totalDist   = distB - initialDist;
   for (auto iter = pacedA + 1; iter != pacedB; ++iter) {
-    size_t k = iter - aKeyframes.start();
+    size_t k = iter - aKeyframes.begin();
     if (aCumulativeDistances[k] == kNotPaceable) {
       continue;
     }
@@ -1563,12 +1564,14 @@ PaceRange(const Range<Keyframe>& aKeyframes,
  *
  * @param aValues The computed values returned by GetComputedKeyframeValues.
  * @param aPacedProperty The paced property.
+ * @param aStyleContext The style context for computing distance on transform.
  * @return The cumulative distances for the paced property. The length will be
  *   the same as aValues.
  */
 static nsTArray<double>
 GetCumulativeDistances(const nsTArray<ComputedKeyframeValues>& aValues,
-                       nsCSSPropertyID aPacedProperty)
+                       nsCSSPropertyID aPacedProperty,
+                       nsStyleContext* aStyleContext)
 {
   // a) If aPacedProperty is a shorthand property, get its components.
   //    Otherwise, just add the longhand property into the set.
@@ -1636,6 +1639,7 @@ GetCumulativeDistances(const nsTArray<ComputedKeyframeValues>& aValues,
                 prop,
                 prevPacedValues[propIdx].mValue,
                 pacedValues[propIdx].mValue,
+                aStyleContext,
                 componentDistance)) {
             dist += componentDistance * componentDistance;
           }
@@ -1649,6 +1653,7 @@ GetCumulativeDistances(const nsTArray<ComputedKeyframeValues>& aValues,
           StyleAnimationValue::ComputeDistance(aPacedProperty,
                                                prevPacedValues[0].mValue,
                                                pacedValues[0].mValue,
+                                               aStyleContext,
                                                dist);
       }
       cumulativeDistances[i] = cumulativeDistances[preIdx] + dist;

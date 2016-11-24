@@ -76,7 +76,6 @@ class FxDesktopBuild(BuildScript, TryToolsMixin, object):
                 'stage_product': 'firefox',
                 'platform_supports_post_upload_to_latest': True,
                 'latest_mar_dir': '/pub/mozilla.org/firefox/nightly/latest-%(branch)s',
-                'influx_credentials_file': 'oauth.txt',
                 'build_resources_path': '%(abs_src_dir)s/obj-firefox/.mozbuild/build_resources.json',
                 'nightly_promotion_branches': ['mozilla-central', 'mozilla-aurora'],
 
@@ -126,7 +125,10 @@ class FxDesktopBuild(BuildScript, TryToolsMixin, object):
 
         if self.try_message_has_flag('artifact'):
             self.info('Artifact build requested in try syntax.')
-            self._update_build_variant(rw_config)
+            variant = 'artifact'
+            if c.get('build_variant') in ['debug', 'cross-debug']:
+                variant = 'debug-artifact'
+            self._update_build_variant(rw_config, variant)
 
     # helpers
     def _update_build_variant(self, rw_config, variant='artifact'):

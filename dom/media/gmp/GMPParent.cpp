@@ -265,7 +265,7 @@ GMPParent::EnsureAsyncShutdownTimeoutSet()
   return rv;
 }
 
-bool
+mozilla::ipc::IPCResult
 GMPParent::RecvPGMPContentChildDestroyed()
 {
   --mGMPContentChildCount;
@@ -286,7 +286,7 @@ GMPParent::RecvPGMPContentChildDestroyed()
     }
   }
 #endif
-  return true;
+  return IPC_OK();
 }
 
 void
@@ -564,27 +564,43 @@ GMPParent::GMPThread()
   return mGMPThread;
 }
 
+/* static */
 bool
-GMPParent::SupportsAPI(const nsCString& aAPI, const nsCString& aTag)
+GMPCapability::Supports(const nsTArray<GMPCapability>& aCapabilities,
+                        const nsCString& aAPI,
+                        const nsTArray<nsCString>& aTags)
 {
-  for (uint32_t i = 0; i < mCapabilities.Length(); i++) {
-    if (!mCapabilities[i].mAPIName.Equals(aAPI)) {
+  for (const nsCString& tag : aTags) {
+    if (!GMPCapability::Supports(aCapabilities, aAPI, tag)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/* static */
+bool
+GMPCapability::Supports(const nsTArray<GMPCapability>& aCapabilities,
+                        const nsCString& aAPI,
+                        const nsCString& aTag)
+{
+  for (const GMPCapability& capabilities : aCapabilities) {
+    if (!capabilities.mAPIName.Equals(aAPI)) {
       continue;
     }
-    nsTArray<nsCString>& tags = mCapabilities[i].mAPITags;
-    for (uint32_t j = 0; j < tags.Length(); j++) {
-      if (tags[j].Equals(aTag)) {
+    for (const nsCString& tag : capabilities.mAPITags) {
+      if (tag.Equals(aTag)) {
 #ifdef XP_WIN
         // Clearkey on Windows advertises that it can decode in its GMP info
         // file, but uses Windows Media Foundation to decode. That's not present
         // on Windows XP, and on some Vista, Windows N, and KN variants without
         // certain services packs.
-        if (tags[j].Equals(kEMEKeySystemClearkey)) {
-          if (mCapabilities[i].mAPIName.EqualsLiteral(GMP_API_VIDEO_DECODER)) {
+        if (tag.Equals(kEMEKeySystemClearkey)) {
+          if (capabilities.mAPIName.EqualsLiteral(GMP_API_VIDEO_DECODER)) {
             if (!WMFDecoderModule::HasH264()) {
               continue;
             }
-          } else if (mCapabilities[i].mAPIName.EqualsLiteral(GMP_API_AUDIO_DECODER)) {
+          } else if (capabilities.mAPIName.EqualsLiteral(GMP_API_AUDIO_DECODER)) {
             if (!WMFDecoderModule::HasAAC()) {
               continue;
             }
@@ -748,20 +764,20 @@ GMPParent::DeallocPGMPStorageParent(PGMPStorageParent* aActor)
   return true;
 }
 
-bool
+mozilla::ipc::IPCResult
 GMPParent::RecvPGMPStorageConstructor(PGMPStorageParent* aActor)
 {
   GMPStorageParent* p  = (GMPStorageParent*)aActor;
   if (NS_WARN_IF(NS_FAILED(p->Init()))) {
-    return false;
+    return IPC_FAIL_NO_REASON(this);
   }
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 GMPParent::RecvPGMPTimerConstructor(PGMPTimerParent* actor)
 {
-  return true;
+  return IPC_OK();
 }
 
 PGMPTimerParent*
@@ -1008,20 +1024,20 @@ GMPParent::GetPluginId() const
   return mPluginId;
 }
 
-bool
+mozilla::ipc::IPCResult
 GMPParent::RecvAsyncShutdownRequired()
 {
   LOGD("%s", __FUNCTION__);
   if (mAsyncShutdownRequired) {
     NS_WARNING("Received AsyncShutdownRequired message more than once!");
-    return true;
+    return IPC_OK();
   }
   mAsyncShutdownRequired = true;
   mService->AsyncShutdownNeeded(this);
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 GMPParent::RecvAsyncShutdownComplete()
 {
   LOGD("%s", __FUNCTION__);
@@ -1034,7 +1050,7 @@ GMPParent::RecvAsyncShutdownComplete()
   }
 #endif
   AbortAsyncShutdown();
-  return true;
+  return IPC_OK();
 }
 
 class RunCreateContentParentCallbacks : public Runnable

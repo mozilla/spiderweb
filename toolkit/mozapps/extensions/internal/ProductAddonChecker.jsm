@@ -4,6 +4,8 @@
 
 "use strict";
 
+/* exported ProductAddonChecker */
+
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 const LOCAL_EME_SOURCES = [{
@@ -26,16 +28,16 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/Log.jsm");
 Cu.import("resource://gre/modules/CertUtils.jsm");
-/*globals checkCert, BadCertHandler*/
+/* globals checkCert, BadCertHandler*/
 Cu.import("resource://gre/modules/FileUtils.jsm");
 Cu.import("resource://gre/modules/NetUtil.jsm");
 Cu.import("resource://gre/modules/osfile.jsm");
 
-/*globals GMPPrefs */
+/* globals GMPPrefs */
 XPCOMUtils.defineLazyModuleGetter(this, "GMPPrefs",
                                   "resource://gre/modules/GMPUtils.jsm");
 
-/*globals OS */
+/* globals OS */
 
 XPCOMUtils.defineLazyModuleGetter(this, "UpdateUtils",
                                   "resource://gre/modules/UpdateUtils.jsm");
@@ -58,10 +60,6 @@ var CreateXHR = function() {
  * that we fail cleanly in such case.
  */
 const TIMEOUT_DELAY_MS = 20000;
-// Chunk size for the incremental downloader
-const DOWNLOAD_CHUNK_BYTES_SIZE = 300000;
-// Incremental downloader interval
-const DOWNLOAD_INTERVAL  = 0;
 // How much of a file to read into memory at a time for hashing
 const HASH_CHUNK_SIZE = 8192;
 

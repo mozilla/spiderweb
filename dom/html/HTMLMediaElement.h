@@ -355,6 +355,13 @@ public:
    */
   void NotifyMediaStreamTracksAvailable(DOMMediaStream* aStream);
 
+  /**
+   * Called when a captured MediaStreamTrack is stopped so we can clean up its
+   * MediaInputPort.
+   */
+  void NotifyOutputTrackStopped(DOMMediaStream* aOwningStream,
+                                TrackID aDestinationTrackID);
+
   virtual bool IsNodeOfType(uint32_t aFlags) const override;
 
   /**
@@ -1205,7 +1212,7 @@ protected:
   bool IsPlayingThroughTheAudioChannel() const;
 
   // Update the audio channel playing state
-  void UpdateAudioChannelPlayingState();
+  void UpdateAudioChannelPlayingState(bool aForcePlaying = false);
 
   // Adds to the element's list of pending text tracks each text track
   // in the element's list of text tracks whose text track mode is not disabled
@@ -1222,8 +1229,11 @@ protected:
   // Notifies the audio channel agent when the element starts or stops playing.
   void NotifyAudioChannelAgent(bool aPlaying);
 
-  // Creates the audio channel agent.
-  void CreateAudioChannelAgent();
+  // True if we create the audio channel agent successfully or we already have
+  // one. The agent is used to communicate with the AudioChannelService. eg.
+  // notify we are playing/audible and receive muted/unmuted/suspend/resume
+  // commands from AudioChannelService.
+  bool MaybeCreateAudioChannelAgent();
 
   // Determine if the element should be paused because of suspend conditions.
   bool ShouldElementBePaused();
@@ -1261,12 +1271,25 @@ protected:
   bool IsSuspendedByAudioChannel() const;
   void SetAudioChannelSuspended(SuspendTypes aSuspend);
 
+  // A method to check whether the media element is allowed to start playback.
   bool IsAllowedToPlay();
+  bool IsAllowedToPlayByAudioChannel();
+
+  // If the network state is empty and then we would trigger DoLoad().
+  void MaybeDoLoad();
+
+  // True if the tab which media element belongs to has been to foreground at
+  // least once or activated by manually clicking the unblocking tab icon.
+  bool IsTabActivated() const;
 
   bool IsAudible() const;
   bool HaveFailedWithSourceNotSupportedError() const;
 
   void OpenUnsupportedMediaWithExtenalAppIfNeeded();
+
+  // It's used for fennec only, send the notification when the user resumes the
+  // media which was paused by media control.
+  void MaybeNotifyMediaResumed(SuspendTypes aSuspend);
 
   class nsAsyncEventRunner;
   using nsGenericHTMLElement::DispatchEvent;
@@ -1589,10 +1612,16 @@ protected:
   // True if the media has encryption information.
   bool mIsEncrypted;
 
-  // True when the CDM cannot decrypt the current block, and the
-  // waitingforkey event has been fired. Back to false when keys have become
-  // available and we can advance the current playback position.
-  bool mWaitingForKey;
+  enum WaitingForKeyState {
+    NOT_WAITING_FOR_KEY = 0,
+    WAITING_FOR_KEY = 1,
+    WAITING_FOR_KEY_DISPATCHED = 2
+  };
+
+  // True when the CDM cannot decrypt the current block due to lacking a key.
+  // Note: the "waitingforkey" event is not dispatched until all decoded data
+  // has been rendered.
+  WaitingForKeyState mWaitingForKey;
 
   // Listens for waitingForKey events from the owned decoder.
   MediaEventListener mWaitingForKeyListener;
@@ -1617,7 +1646,8 @@ protected:
   // playback.
   bool mDisableVideo;
 
-  // An agent used to join audio channel service.
+  // An agent used to join audio channel service and its life cycle would equal
+  // to media element.
   RefPtr<AudioChannelAgent> mAudioChannelAgent;
 
   RefPtr<TextTrackManager> mTextTrackManager;

@@ -802,54 +802,6 @@ dtls_SendSavedWriteData(sslSocket *ss)
     return SECSuccess;
 }
 
-/* Compress, MAC, encrypt a DTLS record. Allows specification of
- * the epoch using epoch value. If use_epoch is PR_TRUE then
- * we use the provided epoch. If use_epoch is PR_FALSE then
- * whatever the current value is in effect is used.
- *
- * Called from ssl3_SendRecord()
- */
-SECStatus
-dtls_CompressMACEncryptRecord(sslSocket *ss,
-                              ssl3CipherSpec *cwSpec,
-                              SSL3ContentType type,
-                              const SSL3Opaque *pIn,
-                              PRUint32 contentLen,
-                              sslBuffer *wrBuf)
-{
-    SECStatus rv = SECFailure;
-
-    ssl_GetSpecReadLock(ss); /********************************/
-
-    /* The reason for this switch-hitting code is that we might have
-     * a flight of records spanning an epoch boundary, e.g.,
-     *
-     * ClientKeyExchange (epoch = 0)
-     * ChangeCipherSpec (epoch = 0)
-     * Finished (epoch = 1)
-     *
-     * Thus, each record needs a different cipher spec. The information
-     * about which epoch to use is carried with the record.
-     */
-    if (!cwSpec) {
-        cwSpec = ss->ssl3.cwSpec;
-    } else {
-        PORT_Assert(type == content_handshake ||
-                    type == content_change_cipher_spec);
-    }
-
-    if (cwSpec->version < SSL_LIBRARY_VERSION_TLS_1_3) {
-        rv = ssl3_CompressMACEncryptRecord(cwSpec, ss->sec.isServer, PR_TRUE,
-                                           PR_FALSE, type, pIn, contentLen,
-                                           wrBuf);
-    } else {
-        rv = tls13_ProtectRecord(ss, cwSpec, type, pIn, contentLen, wrBuf);
-    }
-    ssl_ReleaseSpecReadLock(ss); /************************************/
-
-    return rv;
-}
-
 static SECStatus
 dtls_StartTimer(sslSocket *ss, PRUint32 time, DTLSTimerCb cb)
 {
@@ -999,7 +951,7 @@ dtls_HandleHelloVerifyRequest(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 {
     int errCode = SSL_ERROR_RX_MALFORMED_HELLO_VERIFY_REQUEST;
     SECStatus rv;
-    PRInt32 temp;
+    SSL3ProtocolVersion temp;
     SSL3AlertDescription desc = illegal_parameter;
 
     SSL_TRC(3, ("%d: SSL3[%d]: handle hello_verify_request handshake",
@@ -1013,15 +965,22 @@ dtls_HandleHelloVerifyRequest(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
         goto alert_loser;
     }
 
-    /* The version */
-    temp = ssl3_ConsumeHandshakeNumber(ss, 2, &b, &length);
-    if (temp < 0) {
+    /* The version.
+     *
+     * RFC 4347 required that you verify that the server versions
+     * match (Section 4.2.1) in the HelloVerifyRequest and the
+     * ServerHello.
+     *
+     * RFC 6347 suggests (SHOULD) that servers always use 1.0 in
+     * HelloVerifyRequest and allows the versions not to match,
+     * especially when 1.2 is being negotiated.
+     *
+     * Therefore we do not do anything to enforce a match, just
+     * read and check that this value is sane.
+     */
+    rv = ssl_ClientReadVersion(ss, &b, &length, &temp);
+    if (rv != SECSuccess) {
         goto loser; /* alert has been sent */
-    }
-
-    if (temp != SSL_LIBRARY_VERSION_DTLS_1_0_WIRE &&
-        temp != SSL_LIBRARY_VERSION_DTLS_1_2_WIRE) {
-        goto alert_loser;
     }
 
     /* Read the cookie.

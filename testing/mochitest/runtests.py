@@ -146,9 +146,12 @@ class MessageLogger(object):
 
     def __init__(self, logger, buffering=True):
         self.logger = logger
-        self.buffering = buffering
-        self.restore_buffering = False
-        self.tests_started = False
+
+        # Even if buffering is enabled, we only want to buffer messages between
+        # TEST-START/TEST-END. So it is off to begin, but will be enabled after
+        # a TEST-START comes in.
+        self.buffering = False
+        self.restore_buffering = buffering
 
         # Message buffering
         self.buffered_messages = []
@@ -210,9 +213,6 @@ class MessageLogger(object):
 
     def process_message(self, message):
         """Processes a structured message. Takes into account buffering, errors, ..."""
-        if not self.tests_started and message['action'] == 'test_start':
-            self.tests_started = True
-
         # Activation/deactivating message buffering from the JS side
         if message['action'] == 'buffering_on':
             self.buffering = True
@@ -251,7 +251,6 @@ class MessageLogger(object):
         # unstructured, it is directly logged.
         elif any([not self.buffering,
                   unstructured,
-                  not self.tests_started,
                   message['action'] not in self.BUFFERED_ACTIONS]):
             self.logger.log_raw(message)
         else:
@@ -261,6 +260,10 @@ class MessageLogger(object):
         # If a test ended, we clean the buffer
         if message['action'] == 'test_end':
             self.buffered_messages = []
+            self.restore_buffering = self.restore_buffering or self.buffering
+            self.buffering = False
+
+        if message['action'] == 'test_start':
             if self.restore_buffering:
                 self.restore_buffering = False
                 self.buffering = True
@@ -276,13 +279,19 @@ class MessageLogger(object):
 
     def dump_buffered(self, limit=False):
         if limit:
-            dumped_messages = self.buffered_messages[-
-                                                     self.BUFFERING_THRESHOLD:]
+            dumped_messages = self.buffered_messages[-self.BUFFERING_THRESHOLD:]
         else:
             dumped_messages = self.buffered_messages
 
-        for buf_msg in dumped_messages:
-            self.logger.log_raw(buf_msg)
+        last_timestamp = None
+        for buf in dumped_messages:
+            timestamp = datetime.fromtimestamp(buf['time'] / 1000).strftime('%H:%M:%S')
+            if timestamp != last_timestamp:
+                self.logger.info("Buffered messages logged at {}".format(timestamp))
+            last_timestamp = timestamp
+
+            self.logger.log_raw(buf)
+        self.logger.info("Buffered messages finished")
         # Cleaning the list of buffered messages
         self.buffered_messages = []
 
@@ -456,7 +465,7 @@ class MochitestServer(object):
             time.sleep(.05)
             i += .05
         else:
-            self._log.info(
+            self._log.error(
                 "TEST-UNEXPECTED-FAIL | runtests.py | Timed out while waiting for server startup.")
             self.stop()
             sys.exit(1)
@@ -770,7 +779,7 @@ class MochitestDesktop(object):
     # TODO: replace this with 'runtests.py' or 'mochitest' or the like
     test_name = 'automation.py'
 
-    def __init__(self, logger_options):
+    def __init__(self, logger_options, quiet=False):
         self.update_mozinfo()
         self.server = None
         self.wsserver = None
@@ -796,7 +805,7 @@ class MochitestDesktop(object):
                                                  })
             MochitestDesktop.log = self.log
 
-        self.message_logger = MessageLogger(logger=self.log)
+        self.message_logger = MessageLogger(logger=self.log, buffering=quiet)
         # Max time in seconds to wait for server startup before tests will fail -- if
         # this seems big, it's mostly for debug machines where cold startup
         # (particularly after a build) takes forever.
@@ -1236,7 +1245,7 @@ toolbar#nav-bar {
         manifest = self.writeChromeManifest(options)
 
         if not os.path.isdir(self.mochijar):
-            self.log.info(
+            self.log.error(
                 "TEST-UNEXPECTED-FAIL | invalid setup: missing mochikit extension")
             return None
 
@@ -1291,6 +1300,7 @@ toolbar#nav-bar {
         if self._active_tests:
             return self._active_tests
 
+        tests = []
         manifest = self.getTestManifest(options)
         if manifest:
             if options.extra_mozinfo_json:
@@ -1420,7 +1430,8 @@ toolbar#nav-bar {
             if os.path.exists(masterPath):
                 manifest = TestManifest([masterPath], strict=False)
             else:
-                self._log.warning(
+                manifest = None
+                self.log.warning(
                     'TestManifest masterPath %s does not exist' %
                     masterPath)
 
@@ -1621,6 +1632,12 @@ toolbar#nav-bar {
             options.extraPrefs.append(
                 "testing.browserTestHarness.timeout=%d" %
                 options.timeout)
+        # browser-chrome tests use a fairly short default timeout of 45 seconds;
+        # this is sometimes too short on asan, where we expect reduced performance.
+        if mozinfo.info["asan"] and options.flavor == 'browser' and options.timeout is None:
+            self.log.info("Increasing default timeout to 90 seconds on ASAN")
+            options.extraPrefs.append("testing.browserTestHarness.timeout=90")
+
         options.extraPrefs.append(
             "browser.tabs.remote.autostart=%s" %
             ('true' if options.e10s else 'false'))
@@ -1632,17 +1649,6 @@ toolbar#nav-bar {
 
         # get extensions to install
         extensions = self.getExtensionsToInstall(options)
-
-        # web apps
-        appsPath = os.path.join(
-            SCRIPT_DIR,
-            'profile_data',
-            'webapps_mochitest.json')
-        if os.path.exists(appsPath):
-            with open(appsPath) as apps_file:
-                apps = json.load(apps_file)
-        else:
-            apps = None
 
         # preferences
         preferences = [
@@ -1695,7 +1701,6 @@ toolbar#nav-bar {
                                addons=extensions,
                                locations=self.locations,
                                preferences=prefs,
-                               apps=apps,
                                proxy=proxy
                                )
 
@@ -1709,7 +1714,7 @@ toolbar#nav-bar {
         # TODO: this should really be upstreamed somewhere, maybe mozprofile
         certificateStatus = self.fillCertificateDB(options)
         if certificateStatus:
-            self.log.info(
+            self.log.error(
                 "TEST-UNEXPECTED-FAIL | runtests.py | Certificate integration failed")
             return None
 
@@ -1840,8 +1845,8 @@ toolbar#nav-bar {
                 processPID)
             if isPidAlive(processPID):
                 foundZombie = True
-                self.log.info("TEST-UNEXPECTED-FAIL | zombiecheck | child process "
-                              "%d still alive after shutdown" % processPID)
+                self.log.error("TEST-UNEXPECTED-FAIL | zombiecheck | child process "
+                               "%d still alive after shutdown" % processPID)
                 self.killAndGetStack(
                     processPID,
                     utilityPath,
@@ -1866,17 +1871,12 @@ toolbar#nav-bar {
                detectShutdownLeaks=False,
                screenshotOnFail=False,
                bisectChunk=None,
-               quiet=False,
                marionette_args=None):
         """
         Run the app, log the duration it took to execute, return the status code.
         Kills the app if it runs for longer than |maxTime| seconds, or outputs nothing
         for |timeout| seconds.
         """
-
-        # configure the message logger buffering
-        self.message_logger.buffering = quiet
-
         # It can't be the case that both a with-debugger and an
         # on-Valgrind run have been requested.  doTests() should have
         # already excluded this possibility.
@@ -2033,7 +2033,7 @@ toolbar#nav-bar {
             # record post-test information
             if status:
                 self.message_logger.dump_buffered()
-                self.log.info(
+                self.log.error(
                     "TEST-UNEXPECTED-FAIL | %s | application terminated with exit code %s" %
                     (self.lastTestSeen, status))
             else:
@@ -2141,9 +2141,9 @@ toolbar#nav-bar {
                 # To inform that we are in the process of bisection, and to
                 # look for bleedthrough
                 if options.bisectChunk != "default" and not bisection_log:
-                    self.log.info("TEST-UNEXPECTED-FAIL | Bisection | Please ignore repeats "
-                                  "and look for 'Bleedthrough' (if any) at the end of "
-                                  "the failure list")
+                    self.log.error("TEST-UNEXPECTED-FAIL | Bisection | Please ignore repeats "
+                                   "and look for 'Bleedthrough' (if any) at the end of "
+                                   "the failure list")
                     bisection_log = 1
 
             result = self.doTests(options, testsToRun)
@@ -2389,7 +2389,6 @@ toolbar#nav-bar {
                                  detectShutdownLeaks=detectShutdownLeaks,
                                  screenshotOnFail=options.screenshotOnFail,
                                  bisectChunk=options.bisectChunk,
-                                 quiet=options.quiet,
                                  marionette_args=marionette_args,
                                  )
         except KeyboardInterrupt:
@@ -2653,7 +2652,7 @@ def run_test_harness(parser, options):
         key: value for key, value in vars(options).iteritems()
         if key.startswith('log') or key == 'valgrind'}
 
-    runner = MochitestDesktop(logger_options)
+    runner = MochitestDesktop(logger_options, quiet=options.quiet)
 
     options.runByDir = False
 

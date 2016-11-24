@@ -44,6 +44,7 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/WindowBinding.h"
+#include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ProcessHangMonitor.h"
@@ -1318,7 +1319,13 @@ XPCJSContext::InterruptCallback(JSContext* cx)
         return true;
     }
 
-    MOZ_ASSERT(!win->IsDying());
+    if (win->IsDying()) {
+        // The window is being torn down. When that happens we try to prevent
+        // the dispatch of new runnables, so it also makes sense to kill any
+        // long-running script. The user is primarily interested in this page
+        // going away.
+        return false;
+    }
 
     if (win->GetIsPrerendered()) {
         // We cannot display a dialog if the page is being prerendered, so
@@ -2375,6 +2382,10 @@ ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats& rtStats,
         KIND_HEAP, rtStats.runtime.sharedImmutableStringsCache,
         "Immutable strings (such as JS scripts' source text) shared across all JSRuntimes.");
 
+    RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/shared-intl-data"),
+        KIND_HEAP, rtStats.runtime.sharedIntlData,
+        "Shared internationalization data.");
+
     RREPORT_BYTES(rtPath + NS_LITERAL_CSTRING("runtime/uncompressed-source-cache"),
         KIND_HEAP, rtStats.runtime.uncompressedSourceCache,
         "The uncompressed source code cache.");
@@ -3034,11 +3045,17 @@ AccumulateTelemetryCallback(int id, uint32_t sample, const char* key)
       case JS_TELEMETRY_GC_RESET:
         Telemetry::Accumulate(Telemetry::GC_RESET, sample);
         break;
+      case JS_TELEMETRY_GC_RESET_REASON:
+        Telemetry::Accumulate(Telemetry::GC_RESET_REASON, sample);
+        break;
       case JS_TELEMETRY_GC_INCREMENTAL_DISABLED:
         Telemetry::Accumulate(Telemetry::GC_INCREMENTAL_DISABLED, sample);
         break;
       case JS_TELEMETRY_GC_NON_INCREMENTAL:
         Telemetry::Accumulate(Telemetry::GC_NON_INCREMENTAL, sample);
+        break;
+      case JS_TELEMETRY_GC_NON_INCREMENTAL_REASON:
+        Telemetry::Accumulate(Telemetry::GC_NON_INCREMENTAL_REASON, sample);
         break;
       case JS_TELEMETRY_GC_SCC_SWEEP_TOTAL_MS:
         Telemetry::Accumulate(Telemetry::GC_SCC_SWEEP_TOTAL_MS, sample);
@@ -3600,6 +3617,8 @@ XPCJSContext::AfterProcessTask(uint32_t aNewRecursionDepth)
     // Now that we are certain that the event is complete,
     // we can flush any ongoing performance measurement.
     js::FlushPerformanceMonitoring(Get()->Context());
+
+    mozilla::jsipc::AfterProcessTask();
 }
 
 /***************************************************************************/

@@ -140,6 +140,7 @@ use std::ptr;
 use std::mem;
 use std::fmt;
 use std::cmp;
+use std::str;
 use std::u32;
 
 //////////////////////////////////
@@ -257,6 +258,12 @@ macro_rules! define_string_types {
             }
         }
 
+        impl AsRef<[$char_t]> for $AString {
+            fn as_ref(&self) -> &[$char_t] {
+                self
+            }
+        }
+
         impl cmp::PartialEq for $AString {
             fn eq(&self, other: &$AString) -> bool {
                 &self[..] == &other[..]
@@ -309,6 +316,24 @@ macro_rules! define_string_types {
         impl<'a> DerefMut for $String<'a> {
             fn deref_mut(&mut self) -> &mut $AString {
                 &mut self.hdr
+            }
+        }
+
+        impl<'a> AsRef<[$char_t]> for $String<'a> {
+            fn as_ref(&self) -> &[$char_t] {
+                &self
+            }
+        }
+
+        impl<'a> From<&'a String> for $String<'a> {
+            fn from(s: &'a String) -> $String<'a> {
+                $String::from(&s[..])
+            }
+        }
+
+        impl<'a> From<&'a Vec<$char_t>> for $String<'a> {
+            fn from(s: &'a Vec<$char_t>) -> $String<'a> {
+                $String::from(&s[..])
             }
         }
 
@@ -459,6 +484,12 @@ macro_rules! define_string_types {
             }
         }
 
+        impl<'a> AsRef<[$char_t]> for $FixedString<'a> {
+            fn as_ref(&self) -> &[$char_t] {
+                &self
+            }
+        }
+
         impl<'a> fmt::Write for $FixedString<'a> {
             fn write_str(&mut self, s: &str) -> Result<(), fmt::Error> {
                 $AString::write_str(self, s)
@@ -541,27 +572,34 @@ impl nsACString {
         Gecko_FinalizeCString(self);
     }
 
-    pub fn assign(&mut self, other: &nsACString) {
+    pub fn assign<T: AsRef<[u8]> + ?Sized>(&mut self, other: &T) {
+        let s = nsCString::from(other.as_ref());
         unsafe {
-            Gecko_AssignCString(self as *mut _, other as *const _);
+            Gecko_AssignCString(self, &*s);
         }
     }
 
-    pub fn assign_utf16(&mut self, other: &nsAString) {
-        self.assign(&nsCString::new());
+    pub fn assign_utf16<T: AsRef<[u16]> + ?Sized>(&mut self, other: &T) {
+        self.assign(&[]);
         self.append_utf16(other);
     }
 
-    pub fn append(&mut self, other: &nsACString) {
+    pub fn append<T: AsRef<[u8]> + ?Sized>(&mut self, other: &T) {
+        let s = nsCString::from(other.as_ref());
         unsafe {
-            Gecko_AppendCString(self as *mut _, other as *const _);
+            Gecko_AppendCString(self, &*s);
         }
     }
 
-    pub fn append_utf16(&mut self, other: &nsAString) {
+    pub fn append_utf16<T: AsRef<[u16]> + ?Sized>(&mut self, other: &T) {
+        let s = nsString::from(other.as_ref());
         unsafe {
-            Gecko_AppendUTF16toCString(self as *mut _, other as *const _);
+            Gecko_AppendUTF16toCString(self, &*s);
         }
+    }
+
+    pub unsafe fn as_str_unchecked(&self) -> &str {
+        str::from_utf8_unchecked(self)
     }
 }
 
@@ -641,26 +679,29 @@ impl nsAString {
         Gecko_FinalizeString(self);
     }
 
-    pub fn assign(&mut self, other: &nsAString) {
+    pub fn assign<T: AsRef<[u16]> + ?Sized>(&mut self, other: &T) {
+        let s = nsString::from(other.as_ref());
         unsafe {
-            Gecko_AssignString(self as *mut _, other as *const _);
+            Gecko_AssignString(self, &*s);
         }
     }
 
-    pub fn assign_utf8(&mut self, other: &nsACString) {
-        self.assign(&nsString::new());
+    pub fn assign_utf8<T: AsRef<[u8]> + ?Sized>(&mut self, other: &T) {
+        self.assign(&[]);
         self.append_utf8(other);
     }
 
-    pub fn append(&mut self, other: &nsAString) {
+    pub fn append<T: AsRef<[u16]> + ?Sized>(&mut self, other: &T) {
+        let s = nsString::from(other.as_ref());
         unsafe {
-            Gecko_AppendString(self as *mut _, other as *const _);
+            Gecko_AppendString(self, &*s);
         }
     }
 
-    pub fn append_utf8(&mut self, other: &nsACString) {
+    pub fn append_utf8<T: AsRef<[u8]> + ?Sized>(&mut self, other: &T) {
+        let s = nsCString::from(other.as_ref());
         unsafe {
-            Gecko_AppendUTF8toString(self as *mut _, other as *const _);
+            Gecko_AppendUTF8toString(self, &*s);
         }
     }
 }

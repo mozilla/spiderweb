@@ -205,8 +205,10 @@ ChannelFromScriptURL(nsIPrincipal* principal,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(channel)) {
+    mozilla::net::ReferrerPolicy referrerPolicy = parentDoc ?
+      parentDoc->GetReferrerPolicy() : mozilla::net::RP_Default;
     rv = nsContentUtils::SetFetchReferrerURIWithPolicy(principal, parentDoc,
-                                                       httpChannel, mozilla::net::RP_Default);
+                                                       httpChannel, referrerPolicy);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -2094,7 +2096,7 @@ ScriptExecutorRunnable::LogExceptionToConsole(JSContext* aCx,
   }
 
   RefPtr<xpc::ErrorReport> xpcReport = new xpc::ErrorReport();
-  xpcReport->Init(report.report(), report.message(),
+  xpcReport->Init(report.report(), report.toStringResult().c_str(),
                   aWorkerPrivate->IsChromeWorker(), aWorkerPrivate->WindowID());
 
   RefPtr<AsyncErrorReporter> r = new AsyncErrorReporter(xpcReport);

@@ -12,4 +12,6 @@ module.exports = {
   sourceMapService: {
     subscribe: () => {},
   },
+  openLink: () => {},
+  createElement: tagName => document.createElement(tagName)
 };

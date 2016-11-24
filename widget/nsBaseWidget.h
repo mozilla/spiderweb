@@ -58,11 +58,13 @@ class APZEventState;
 class CompositorSession;
 class ImageContainer;
 struct ScrollableLayerGuid;
+class RemoteCompositorSession;
 } // namespace layers
 
 namespace widget {
 class CompositorWidgetDelegate;
 class InProcessCompositorWidget;
+class WidgetRenderingContext;
 } // namespace widget
 
 class CompositorVsyncDispatcher;
@@ -111,6 +113,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference
   friend class nsAutoRollup;
   friend class DispatchWheelEventOnMainThread;
   friend class mozilla::widget::InProcessCompositorWidget;
+  friend class mozilla::layers::RemoteCompositorSession;
 
 protected:
   typedef base::Thread Thread;
@@ -183,6 +186,7 @@ public:
                                            uint16_t aDuration,
                                            nsISupports* aData,
                                            nsIRunnable* aCallback) override;
+  virtual already_AddRefed<nsIScreen> GetWidgetScreen() override;
   virtual nsresult        MakeFullScreen(bool aFullScreen,
                                          nsIScreen* aScreen = nullptr) override;
   void                    InfallibleMakeFullScreen(bool aFullScreen,
@@ -339,9 +343,6 @@ public:
     return aClientSize;
   }
 
-  // return the screen the widget is in.
-  already_AddRefed<nsIScreen> GetWidgetScreen();
-
   // return true if this is a popup widget with a native titlebar
   bool IsPopupWithTitleBar() const
   {
@@ -393,15 +394,15 @@ protected:
   // These are methods for CompositorWidgetWrapper, and should only be
   // accessed from that class. Derived widgets can choose which methods to
   // implement, or none if supporting out-of-process compositing.
-  virtual bool PreRender(mozilla::layers::LayerManagerComposite* aManager) {
+  virtual bool PreRender(mozilla::widget::WidgetRenderingContext* aContext) {
     return true;
   }
-  virtual void PostRender(mozilla::layers::LayerManagerComposite* aManager)
+  virtual void PostRender(mozilla::widget::WidgetRenderingContext* aContext)
   {}
-  virtual void DrawWindowUnderlay(mozilla::layers::LayerManagerComposite* aManager,
+  virtual void DrawWindowUnderlay(mozilla::widget::WidgetRenderingContext* aContext,
                                   LayoutDeviceIntRect aRect)
   {}
-  virtual void DrawWindowOverlay(mozilla::layers::LayerManagerComposite* aManager,
+  virtual void DrawWindowOverlay(mozilla::widget::WidgetRenderingContext* aContext,
                                  LayoutDeviceIntRect aRect)
   {}
   virtual already_AddRefed<DrawTarget> StartRemoteDrawing();
@@ -573,7 +574,7 @@ protected:
   void EnsureTextEventDispatcher();
 
   // Notify the compositor that a device reset has occurred.
-  void OnRenderingDeviceReset();
+  void OnRenderingDeviceReset(uint64_t aSeqNo);
 
   bool UseAPZ();
 
@@ -642,6 +643,7 @@ protected:
   virtual void DestroyCompositor();
   void DestroyLayerManager();
   void ReleaseContentController();
+  void RevokeTransactionIdAllocator();
 
   void FreeShutdownObserver();
 

@@ -50,7 +50,7 @@ random-if(cocoaWidget) != impact-bold.html impact.html # bug 539418
 == localized-family-names-004.html localized-family-names-004-ref.html
 
 # family names with escaped spaces shouldn't match the names without the spaces
-== familyname-escapedidents.html familyname-escapedidents-ref.html
+fails-if(http.oscpu=="Linux\u0020x86_64") == familyname-escapedidents.html familyname-escapedidents-ref.html # bug 1309425
 
 # weight mapping tests
 HTTP(..) == normalmedium.html normalmedium-ref.html
@@ -71,8 +71,8 @@ fuzzy-if(OSX==1010&&browserIsRemote,1,17) fuzzy-if(Android,4,8) HTTP(..) == stre
 fuzzy-if(OSX==1010,3,5) HTTP(..) == stretchmapping-137.html stretchmapping-137-ref.html
 
 # test for font-stretch using @font-face
-skip-if(Android) HTTP(..) == font-stretch-1.html font-stretch-1-ref.html # bug 927602
-skip-if(Android) HTTP(..) == font-shorthand-stretch-1.html font-stretch-1-ref.html # bug 927602
+HTTP(..) == font-stretch-1.html font-stretch-1-ref.html
+HTTP(..) == font-shorthand-stretch-1.html font-stretch-1-ref.html
 
 # bug 724231 - applying synthetic styles to a single @font-face font
 # should apply artificial obliquing, not switch to a true styled face

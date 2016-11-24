@@ -815,7 +815,8 @@ if (IsCSSPropertyPrefEnabled("layout.css.prefixes.webkit")) {
     "-webkit-gradient(linear, 1 2, 3 4, from(##00ff00))",
     "-webkit-gradient(linear, 1 2, 3 4, from(#00fff))", // wrong num hex digits
     "-webkit-gradient(linear, 1 2, 3 4, from(xyz(0,0,0)))", // bogus color func
-    "-webkit-gradient(linear, 1 2, 3 4, from(rgb(100, 100.5, 30)))", // fraction
+    // Mixing <number> and <percentage> is invalid.
+    "-webkit-gradient(linear, 1 2, 3 4, from(rgb(100, 100%, 30)))",
 
     // linear w/ color stops that have comma issues
     "-webkit-gradient(linear, 1 2, 3 4 from(lime))",
@@ -1383,18 +1384,25 @@ var gCSSProperties = {
     other_values: [ "exact" ],
     invalid_values: []
   },
-  "-moz-columns": {
-    domProp: "MozColumns",
+  "columns": {
+    domProp: "columns",
     inherited: false,
     type: CSS_TYPE_TRUE_SHORTHAND,
-    subproperties: [ "-moz-column-count", "-moz-column-width" ],
+    subproperties: [ "column-count", "column-width" ],
     initial_values: [ "auto", "auto auto" ],
     other_values: [ "3", "20px", "2 10px", "10px 2", "2 auto", "auto 2", "auto 50px", "50px auto" ],
     invalid_values: [ "5%", "-1px", "-1", "3 5", "10px 4px", "10 2px 5in", "30px -1",
                       "auto 3 5px", "5 auto 20px", "auto auto auto", "calc(50px + rubbish) 2" ]
   },
-  "-moz-column-count": {
-    domProp: "MozColumnCount",
+  "-moz-columns": {
+    domProp: "MozColumns",
+    inherited: false,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    alias_for: "columns",
+    subproperties: [ "column-count", "column-width" ]
+  },
+  "column-count": {
+    domProp: "columnCount",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: [ "auto" ],
@@ -1402,16 +1410,30 @@ var gCSSProperties = {
     // negative and zero invalid per editor's draft
     invalid_values: [ "-1", "0", "3px" ]
   },
-        "-moz-column-fill": {
-                domProp: "MozColumnFill",
-                inherited: false,
-                type: CSS_TYPE_LONGHAND,
-                initial_values: [ "balance" ],
-                other_values: [ "auto" ],
-                invalid_values: [ "2px", "dotted", "5em" ]
-        },
-  "-moz-column-gap": {
-    domProp: "MozColumnGap",
+  "-moz-column-count": {
+    domProp: "MozColumnCount",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-count",
+    subproperties: [ "column-count" ]
+  },
+  "column-fill": {
+    domProp: "columnFill",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: [ "balance" ],
+    other_values: [ "auto" ],
+    invalid_values: [ "2px", "dotted", "5em" ]
+  },
+  "-moz-column-fill": {
+    domProp: "MozColumnFill",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-fill",
+    subproperties: [ "column-fill" ]
+  },
+  "column-gap": {
+    domProp: "columnGap",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: [ "normal", "1em", "calc(-2em + 3em)" ],
@@ -1427,18 +1449,32 @@ var gCSSProperties = {
     ],
     invalid_values: [ "3%", "-1px", "4" ]
   },
-  "-moz-column-rule": {
-    domProp: "MozColumnRule",
+  "-moz-column-gap": {
+    domProp: "MozColumnGap",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-gap",
+    subproperties: [ "column-gap" ]
+  },
+  "column-rule": {
+    domProp: "columnRule",
     inherited: false,
     type: CSS_TYPE_TRUE_SHORTHAND,
     prerequisites: { "color": "green" },
-    subproperties: [ "-moz-column-rule-width", "-moz-column-rule-style", "-moz-column-rule-color" ],
+    subproperties: [ "column-rule-width", "column-rule-style", "column-rule-color" ],
     initial_values: [ "medium none currentColor", "none", "medium", "currentColor" ],
     other_values: [ "2px blue solid", "red dotted 1px", "ridge 4px orange", "5px solid" ],
     invalid_values: [ "2px 3px 4px red", "dotted dashed", "5px dashed green 3px", "5 solid", "5 green solid" ]
   },
-  "-moz-column-rule-width": {
-    domProp: "MozColumnRuleWidth",
+  "-moz-column-rule": {
+    domProp: "MozColumnRule",
+    inherited: false,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    alias_for: "column-rule",
+    subproperties: [ "column-rule-width", "column-rule-style", "column-rule-color" ]
+  },
+  "column-rule-width": {
+    domProp: "columnRuleWidth",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     prerequisites: { "-moz-column-rule-style": "solid" },
@@ -1707,16 +1743,30 @@ var gCSSProperties = {
       "calc((0 + 2em) * 1)",
     ]
   },
-  "-moz-column-rule-style": {
-    domProp: "MozColumnRuleStyle",
+  "-moz-column-rule-width": {
+    domProp: "MozColumnRuleWidth",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-rule-width",
+    subproperties: [ "column-rule-width" ]
+  },
+  "column-rule-style": {
+    domProp: "columnRuleStyle",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: [ "none" ],
     other_values: [ "solid", "hidden", "ridge", "groove", "inset", "outset", "double", "dotted", "dashed" ],
     invalid_values: [ "20", "foo" ]
   },
-  "-moz-column-rule-color": {
-    domProp: "MozColumnRuleColor",
+  "-moz-column-rule-style": {
+    domProp: "MozColumnRuleStyle",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-rule-style",
+    subproperties: [ "column-rule-style" ]
+  },
+  "column-rule-color": {
+    domProp: "columnRuleColor",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     prerequisites: { "color": "green" },
@@ -1724,8 +1774,15 @@ var gCSSProperties = {
     other_values: [ "red", "blue", "#ffff00" ],
     invalid_values: [ "ffff00" ]
   },
-  "-moz-column-width": {
-    domProp: "MozColumnWidth",
+  "-moz-column-rule-color": {
+    domProp: "MozColumnRuleColor",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-rule-color",
+    subproperties: [ "column-rule-color" ]
+  },
+  "column-width": {
+    domProp: "columnWidth",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: [ "auto" ],
@@ -1738,6 +1795,13 @@ var gCSSProperties = {
       "calc(0px)"
     ],
     invalid_values: [ "20", "-1px", "50%" ]
+  },
+  "-moz-column-width": {
+    domProp: "MozColumnWidth",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-width",
+    subproperties: [ "column-width" ]
   },
   "-moz-float-edge": {
     domProp: "MozFloatEdge",
@@ -1800,6 +1864,14 @@ var gCSSProperties = {
       "calc(3*25px + 50%)",
     ],
     invalid_values: [ "5", "..25px", ".+5px", ".px", "-.px", "++5px", "-+4px", "+-3px", "--7px", "+-.6px", "-+.5px", "++.7px", "--.4px" ],
+  },
+  "mask-type": {
+    domProp: "maskType",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: [ "luminance" ],
+    other_values: [ "alpha" ],
+    invalid_values: [],
   },
   "-moz-outline-radius": {
     domProp: "MozOutlineRadius",
@@ -2274,8 +2346,8 @@ var gCSSProperties = {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: [ "transparent", "rgba(255, 127, 15, 0)", "hsla(240, 97%, 50%, 0.0)", "rgba(0, 0, 0, 0)", "rgba(255,255,255,-3.7)" ],
-    other_values: [ "green", "rgb(255, 0, 128)", "#fc2", "#96ed2a", "black", "rgba(255,255,0,3)", "hsl(240, 50%, 50%)", "rgb(50%, 50%, 50%)", "-moz-default-background-color" ],
-    invalid_values: [ "#0", "#00", "#00000", "#0000000", "#000000000", "rgb(100, 100.0, 100)" ],
+    other_values: [ "green", "rgb(255, 0, 128)", "#fc2", "#96ed2a", "black", "rgba(255,255,0,3)", "hsl(240, 50%, 50%)", "rgb(50%, 50%, 50%)", "-moz-default-background-color", "rgb(100, 100.0, 100)" ],
+    invalid_values: [ "#0", "#00", "#00000", "#0000000", "#000000000", "rgb(100, 100%, 100)" ],
     quirks_values: { "000000": "#000000", "96ed2a": "#96ed2a" },
   },
   "background-image": {
@@ -2786,9 +2858,41 @@ var gCSSProperties = {
     inherited: true,
     type: CSS_TYPE_LONGHAND,
     /* XXX should test currentColor, but may or may not be initial */
-    initial_values: [ "black", "#000", "#000f", "#000000ff", "rgb(0, 0, 0)", "rgba(0, 0, 0, 1.0)", "-moz-default-color" ],
-    other_values: [ "green", "#f3c", "#fed292", "rgba(45,300,12,2)", "transparent", "-moz-nativehyperlinktext", "rgba(255,128,0,0.5)", "#e0fc", "#10fcee72" ],
-    invalid_values: [ "#f", "#ff", "#fffff", "#fffffff", "#fffffffff" ],
+    initial_values: [ "black", "#000", "#000f", "#000000ff", "-moz-default-color", "rgb(0, 0, 0)", "rgb(0%, 0%, 0%)",
+      /* css-color-4: */
+      /* rgb() and rgba() are aliases of each other. */
+      "rgb(0, 0, 0)", "rgba(0, 0, 0)", "rgb(0, 0, 0, 1)", "rgba(0, 0, 0, 1)",
+      /* hsl() and hsla() are aliases of each other. */
+      "hsl(0, 0%, 0%)", "hsla(0, 0%, 0%)", "hsl(0, 0%, 0%, 1)", "hsla(0, 0%, 0%, 1)",
+      /* rgb() and rgba() functions now accept <number> rather than <integer>. */
+      "rgb(0.0, 0.0, 0.0)", "rgba(0.0, 0.0, 0.0)", "rgb(0.0, 0.0, 0.0, 1)", "rgba(0.0, 0.0, 0.0, 1)",
+      /* <alpha-value> now accepts <percentage> as well as <number> in rgba() and hsla(). */
+      "rgb(0.0, 0.0, 0.0, 100%)", "hsl(0, 0%, 0%, 100%)",
+      /* rgb() and hsl() now support comma-less expression. */
+      "rgb(0 0 0)", "rgb(0 0 0 / 1)", "rgb(0/* comment */0/* comment */0)", "rgb(0/* comment */0/* comment*/0/1.0)",
+      "hsl(0 0% 0%)", "hsl(0 0% 0% / 1)", "hsl(0/* comment */0%/* comment */0%)", "hsl(0/* comment */0%/* comment */0%/1)",
+      /* Support <angle> for hsl() hue component. */
+      "hsl(0deg, 0%, 0%)", "hsl(360deg, 0%, 0%)", "hsl(0grad, 0%, 0%)", "hsl(400grad, 0%, 0%)", "hsl(0rad, 0%, 0%)", "hsl(0turn, 0%, 0%)", "hsl(1turn, 0%, 0%)",
+    ],
+    other_values: [ "green", "#f3c", "#fed292", "rgba(45,300,12,2)", "transparent", "-moz-nativehyperlinktext", "rgba(255,128,0,0.5)", "#e0fc", "#10fcee72",
+      /* css-color-4: */
+      "rgb(100, 100.0, 100)", "rgb(300 300 300 / 200%)", "rgb(300.0 300.0 300.0 / 2.0)", "hsl(720, 200%, 200%, 2.0)", "hsla(720 200% 200% / 200%)",
+      "hsl(480deg, 20%, 30%, 0.3)", "hsl(55grad, 400%, 30%)", "hsl(0.5grad 400% 500% / 9.0)", "hsl(33rad 100% 90% / 4)", "hsl(0.33turn, 40%, 40%, 10%)",
+    ],
+    invalid_values: [ "#f", "#ff", "#fffff", "#fffffff", "#fffffffff",
+      "rgb(100%, 0, 100%)", "rgba(100, 0, 100%, 30%)",
+      "hsl(0, 0, 0%)", "hsla(0%, 0%, 0%, 0.1)",
+      /* trailing commas */
+      "rgb(0, 0, 0,)", "rgba(0, 0, 0, 0,)",
+      "hsl(0, 0%, 0%,)", "hsla(0, 0%, 0%, 1,)",
+      /* css-color-4: */
+      /* comma and comma-less expressions should not mix together. */
+      "rgb(0, 0, 0 / 1)", "rgb(0 0 0, 1)", "rgb(0, 0 0, 1)", "rgb(0 0, 0 / 1)",
+      "hsl(0, 0%, 0% / 1)", "hsl(0 0% 0%, 1)", "hsl(0 0% 0%, 1)", "hsl(0 0%, 0% / 1)",
+      /* trailing slash */
+      "rgb(0 0 0 /)", "rgb(0, 0, 0 /)",
+      "hsl(0 0% 0% /)", "hsl(0, 0%, 0% /)",
+    ],
     quirks_values: { "000000": "#000000", "96ed2a": "#96ed2a", "fff": "#ffffff", "ffffff": "#ffffff", },
   },
   "content": {
@@ -3342,14 +3446,6 @@ var gCSSProperties = {
     ],
     invalid_values: [ ],
     quirks_values: { "5": "5px" },
-  },
-  "marker-offset": {
-    domProp: "markerOffset",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: [ "auto" ],
-    other_values: [ "6em", "-1px", "calc(0px)", "calc(3em + 2px - 4px)", "calc(-2em)" ],
-    invalid_values: []
   },
   "max-height": {
     domProp: "maxHeight",
@@ -4390,13 +4486,13 @@ var gCSSProperties = {
     initial_values: [ "normal" ],
     other_values: [ "start", "end", "flex-start", "flex-end", "center", "left",
                     "right", "space-between", "space-around", "space-evenly",
-                    "baseline", "last-baseline", "stretch", "start safe",
+                    "first baseline", "last baseline", "baseline", "stretch", "start safe",
                     "unsafe end", "unsafe end stretch", "end safe space-evenly" ],
     invalid_values: [ "none", "5", "self-end", "safe", "normal unsafe", "unsafe safe",
                       "safe baseline", "baseline unsafe", "baseline end", "end normal",
                       "safe end unsafe start", "safe end unsafe", "normal safe start",
                       "unsafe end start", "end start safe", "space-between unsafe",
-                      "stretch safe", "auto" ]
+                      "stretch safe", "auto", "first", "last" ]
   },
   "align-items": {
     domProp: "alignItems",
@@ -4405,8 +4501,8 @@ var gCSSProperties = {
     initial_values: [ "normal" ],
     // Can't test 'left'/'right' here since that computes to 'start' for blocks.
     other_values: [ "end", "flex-start", "flex-end", "self-start", "self-end",
-                    "center", "stretch", "baseline", "unsafe left", "start",
-                    "center unsafe", "safe right", "center safe" ],
+                    "center", "stretch", "first baseline", "last baseline", "baseline",
+                    "unsafe left", "start", "center unsafe", "safe right", "center safe" ],
     invalid_values: [ "space-between", "abc", "5%", "legacy", "legacy end",
                       "end legacy", "unsafe", "unsafe baseline", "normal unsafe",
                       "safe left unsafe", "safe stretch", "end end", "auto" ]
@@ -4417,8 +4513,8 @@ var gCSSProperties = {
     type: CSS_TYPE_LONGHAND,
     initial_values: [ "auto" ],
     other_values: [ "normal", "start", "flex-start", "flex-end", "center", "stretch",
-                    "baseline", "last-baseline", "right safe", "unsafe center",
-                    "self-start", "self-end safe" ],
+                    "first baseline", "last baseline", "baseline", "right safe",
+                    "unsafe center", "self-start", "self-end safe" ],
     invalid_values: [ "space-between", "abc", "30px", "stretch safe", "safe" ]
   },
   "justify-content": {
@@ -4428,13 +4524,13 @@ var gCSSProperties = {
     initial_values: [ "normal" ],
     other_values: [ "start", "end", "flex-start", "flex-end", "center", "left",
                     "right", "space-between", "space-around", "space-evenly",
-                    "baseline", "last-baseline", "stretch", "start safe",
+                    "first baseline", "last baseline", "baseline", "stretch", "start safe",
                     "unsafe end", "unsafe end stretch", "end safe space-evenly" ],
     invalid_values: [ "30px", "5%", "self-end", "safe", "normal unsafe", "unsafe safe",
                       "safe baseline", "baseline unsafe", "baseline end", "normal end",
                       "safe end unsafe start", "safe end unsafe", "normal safe start",
                       "unsafe end start", "end start safe", "space-around unsafe",
-                      "safe stretch", "auto" ]
+                      "safe stretch", "auto", "first", "last" ]
   },
   "justify-items": {
     domProp: "justifyItems",
@@ -4442,14 +4538,15 @@ var gCSSProperties = {
     type: CSS_TYPE_LONGHAND,
     initial_values: [ "auto", "normal" ],
     other_values: [ "end", "flex-start", "flex-end", "self-start", "self-end",
-                    "center", "left", "right", "baseline", "stretch", "start",
-                    "legacy left", "right legacy", "legacy center",
-                    "unsafe right", "left unsafe", "safe right", "center safe" ],
+                    "center", "left", "right", "first baseline", "last baseline",
+                    "baseline", "stretch", "start", "legacy left", "right legacy",
+                    "legacy center", "unsafe right", "left unsafe", "safe right",
+                    "center safe" ],
     invalid_values: [ "space-between", "abc", "30px", "legacy", "legacy start",
                       "end legacy", "legacy baseline", "legacy legacy", "unsafe",
                       "safe legacy left", "legacy left safe", "legacy safe left",
                       "safe left legacy", "legacy left legacy", "baseline unsafe",
-                      "safe unsafe", "safe left unsafe", "safe stretch" ]
+                      "safe unsafe", "safe left unsafe", "safe stretch", "last" ]
   },
   "justify-self": {
     domProp: "justifySelf",
@@ -4457,11 +4554,11 @@ var gCSSProperties = {
     type: CSS_TYPE_LONGHAND,
     initial_values: [ "auto" ],
     other_values: [ "normal", "start", "end", "flex-start", "flex-end", "self-start",
-                    "self-end", "center", "left", "right", "baseline",
-                    "last-baseline", "stretch", "left unsafe", "unsafe right",
+                    "self-end", "center", "left", "right", "baseline", "first baseline",
+                    "last baseline", "stretch", "left unsafe", "unsafe right",
                     "safe right", "center safe" ],
-    invalid_values: [ "space-between", "abc", "30px", "none",
-                      "legacy left", "right legacy" ]
+    invalid_values: [ "space-between", "abc", "30px", "none", "first", "last",
+                      "legacy left", "right legacy", "baseline first", "baseline last" ]
   },
   "flex": {
     domProp: "flex",
@@ -5561,17 +5658,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.text-combine-upright.enabled")) {
   }
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.masking.enabled")) {
-  gCSSProperties["mask-type"] = {
-    domProp: "maskType",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: [ "luminance" ],
-    other_values: [ "alpha" ],
-    invalid_values: []
-  };
-}
-
 if (IsCSSPropertyPrefEnabled("svg.paint-order.enabled")) {
   gCSSProperties["paint-order"] = {
     domProp: "paintOrder",
@@ -6585,9 +6671,7 @@ if (IsCSSPropertyPrefEnabled("layout.css.grid.enabled")) {
   };
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.display-contents.enabled")) {
-  gCSSProperties["display"].other_values.push("contents");
-}
+gCSSProperties["display"].other_values.push("contents");
 
 if (IsCSSPropertyPrefEnabled("layout.css.contain.enabled")) {
   gCSSProperties["contain"] = {
@@ -6936,49 +7020,49 @@ if (SupportsMaskShorthand()) {
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
     /* FIXME: All mask-border-* should be added when we implement them. */
     subproperties: ["mask-clip", "mask-image", "mask-mode", "mask-origin", "mask-position-x", "mask-position-y", "mask-repeat", "mask-size" , "mask-composite"],
-    initial_values: [ "match-source", "none", "no-repeat", "add", "50% 50%", "center center", "50% 50% / auto", "center / auto", "center center / auto", "50% 50% / auto auto",
-      "center none", "center center none", "none center", "none center center", "none 50% 50%", "center / auto none",
-      "center center / auto auto none",
-      "match-source none no-repeat add center center", "center center no-repeat none add", "none no-repeat add center center / auto", "center center / auto no-repeat none add match-source", "none no-repeat add 50% 50% / auto auto match-source",
+    initial_values: [ "match-source", "none", "repeat", "add", "0% 0%", "top left", "0% 0% / auto", "top left / auto", "left top / auto", "0% 0% / auto auto",
+      "top left none", "left top none", "none left top", "none top left", "none 0% 0%", "top left / auto none", "left top / auto none",
+      "top left / auto auto none",
+      "match-source none repeat add top left", "top left repeat none add", "none repeat add top left / auto", "top left / auto repeat none add match-source", "none repeat add 0% 0% / auto auto match-source",
       "border-box", "border-box border-box" ],
     other_values: [
-      "none alpha no-repeat add center",
+      "none alpha repeat add left top",
       "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR42u3NQQ0AAAgEoNP+nTWFDzcoQE1udQQCgUAgEAgEAsGTYAGjxAE/G/Q2tQAAAABJRU5ErkJggg==)",
-      "no-repeat url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR42u3NQQ0AAAgEoNP+nTWFDzcoQE1udQQCgUAgEAgEAsGTYAGjxAE/G/Q2tQAAAABJRU5ErkJggg==') alpha center add",
+      "no-repeat url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR42u3NQQ0AAAgEoNP+nTWFDzcoQE1udQQCgUAgEAgEAsGTYAGjxAE/G/Q2tQAAAABJRU5ErkJggg==') alpha left top add",
       "repeat-x",
       "repeat-y",
-      "repeat",
-      "none repeat-y alpha add 50% 50%",
+      "no-repeat",
+      "none repeat-y alpha add 0% 0%",
       "subtract",
-      "50% center subtract alpha no-repeat none",
+      "0% top subtract alpha repeat none",
       "top",
       "left",
-      "0% 0%",
-      "top left",
-      "center / 100px",
-      "center / contain",
-      "center / cover",
+      "50% 50%",
+      "center",
+      "top / 100px",
+      "left / contain",
+      "left / cover",
       "10px / 10%",
       "10em / calc(20px)",
-      "center center / 100px 100px",
-      "center center / 100px auto",
-      "center center / 100px 10%",
-      "center center / 100px calc(20px)",
-      "bottom right add none alpha no-repeat",
-      "0% alpha",
-      "alpha 0%",
-      "0%",
+      "top left / 100px 100px",
+      "top left / 100px auto",
+      "top left / 100px 10%",
+      "top left / 100px calc(20px)",
+      "bottom right add none alpha repeat",
+      "50% alpha",
+      "alpha 50%",
+      "50%",
       "url(#mymask)",
-      "-moz-radial-gradient(10% bottom, #ffffff, black) add repeat",
-      "-moz-linear-gradient(10px 10px -45deg, red, blue) no-repeat",
-      "-moz-linear-gradient(10px 10px -0.125turn, red, blue) no-repeat",
-      "-moz-repeating-radial-gradient(10% bottom, #ffffff, black) add repeat",
-      "-moz-repeating-linear-gradient(10px 10px -45deg, red, blue) no-repeat",
+      "-moz-radial-gradient(10% bottom, #ffffff, black) add no-repeat",
+      "-moz-linear-gradient(10px 10px -45deg, red, blue) repeat",
+      "-moz-linear-gradient(10px 10px -0.125turn, red, blue) repeat",
+      "-moz-repeating-radial-gradient(10% bottom, #ffffff, black) add no-repeat",
+      "-moz-repeating-linear-gradient(10px 10px -45deg, red, blue) repeat",
       "-moz-element(#test) alpha",
       /* multiple mask-image */
       "url(404.png), url(404.png)",
       "repeat-x, subtract, none",
-      "50% top url(404.png), url(404.png) 50% top",
+      "0% top url(404.png), url(404.png) 50% top",
       "subtract repeat-y top left url(404.png), repeat-x alpha",
       "url(404.png), -moz-linear-gradient(20px 20px -45deg, blue, green), -moz-element(#a) alpha",
       "top left / contain, bottom right / cover",
@@ -6994,10 +7078,10 @@ if (SupportsMaskShorthand()) {
       /* mixes with keywords have to be in correct order */
       "50% left", "top 50%",
       /* no quirks mode colors */
-      "-moz-radial-gradient(10% bottom, ffffff, black) add repeat",
+      "-moz-radial-gradient(10% bottom, ffffff, black) add no-repeat",
       /* no quirks mode lengths */
-      "-moz-linear-gradient(10 10px -45deg, red, blue) no-repeat",
-      "-moz-linear-gradient(10px 10 -45deg, red, blue) no-repeat",
+      "-moz-linear-gradient(10 10px -45deg, red, blue) repeat",
+      "-moz-linear-gradient(10px 10 -45deg, red, blue) repeat",
       "linear-gradient(red -99, yellow, green, blue 120%)",
       /* bug 258080: don't accept background-position separated */
       "left url(404.png) top", "top url(404.png) left",
@@ -7062,9 +7146,8 @@ if (SupportsMaskShorthand()) {
     domProp: "maskPosition",
     inherited: false,
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
-    initial_values: [ "left 50% top 50%", "left 50% center", "center", "center center", "50% 50%", "50% center", "center 50%" ],
-    other_values: [ "top", "left", "right", "bottom", "center bottom", "bottom center", "center right", "right center", "center top", "top center", "center left", "left center", "right bottom", "bottom right", "0%", "top left, top left", "top left, top right", "top right, top left", "left top, 0% 0%", "10% 20%, 30%, 40%", "top left, bottom right", "right bottom, left top", "0%", "0px", "30px", "0%, 10%, 20%, 30%", "top, top, top, top, top",
-      "top 0% left 0%", "top 0% left", "top left", "left top", "0% 0%", "0% top", "left 0%",
+    initial_values: [ "top 0% left 0%", "top 0% left", "top left", "left top", "0% 0%", "0% top", "left 0%" ],
+    other_values: [ "top", "left", "right", "bottom", "center", "center bottom", "bottom center", "center right", "right center", "center top", "top center", "center left", "left center", "right bottom", "bottom right", "50%", "top left, top left", "top left, top right", "top right, top left", "left top, 0% 0%", "10% 20%, 30%, 40%", "top left, bottom right", "right bottom, left top", "0%", "0px", "30px", "0%, 10%, 20%, 30%", "top, top, top, top, top",
       "calc(20px)",
       "calc(20px) 10px",
       "10px calc(20px)",
@@ -7106,8 +7189,8 @@ if (SupportsMaskShorthand()) {
     domProp: "maskPositionX",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    initial_values: [ "center", "50%" ],
-    other_values: [ "right", "left", "0%", "left, left", "left, right", "right, left", "left, 0%", "10%, 20%, 40%", "0px", "30px", "0%, 10%, 20%, 30%", "left, left, left, left, left",
+    initial_values: [ "left", "0%" ],
+    other_values: [ "right", "center", "50%", "center, center", "center, right", "right, center", "center, 50%", "10%, 20%, 40%", "1px", "30px", "50%, 10%, 20%, 30%", "center, center, center, center, center",
       "calc(20px)",
       "calc(20px + 1em)",
       "calc(20px / 2)",
@@ -7132,8 +7215,8 @@ if (SupportsMaskShorthand()) {
     domProp: "maskPositionY",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    initial_values: [ "center", "50%" ],
-    other_values: [ "bottom", "top", "0%", "top, top", "top, bottom", "bottom, top", "top, 0%", "10%, 20%, 40%", "0px", "30px", "0%, 10%, 20%, 30%", "top, top, top, top, top",
+    initial_values: [ "top", "0%" ],
+    other_values: [ "bottom", "center", "50%", "center, center", "center, bottom", "bottom, center", "center, 0%", "10%, 20%, 40%", "1px", "30px", "50%, 10%, 20%, 30%", "center, center, center, center, center",
       "calc(20px)",
       "calc(20px + 1em)",
       "calc(20px / 2)",
@@ -7158,15 +7241,16 @@ if (SupportsMaskShorthand()) {
     domProp: "maskRepeat",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    initial_values: [ "no-repeat", "no-repeat no-repeat" ],
-    other_values: [ "repeat-x", "repeat-y", "repeat",
+    initial_values: [ "repeat", "repeat repeat" ],
+    other_values: [ "repeat-x", "repeat-y", "no-repeat",
       "repeat-x, repeat-x",
-      "no-repeat, repeat",
-      "repeat-y, repeat, repeat-y",
-      "no-repeat, no-repeat, no-repeat",
-      "no-repeat repeat",
+      "repeat, no-repeat",
+      "repeat-y, no-repeat, repeat-y",
+      "repeat, repeat, repeat",
       "repeat no-repeat",
-      "repeat repeat",
+      "no-repeat repeat",
+      "no-repeat no-repeat",
+      "repeat no-repeat",
       "no-repeat no-repeat, no-repeat no-repeat",
     ],
     invalid_values: [ "repeat repeat repeat",

@@ -73,7 +73,6 @@ public:
 #ifdef MOZ_FFMPEG
     FFmpegRuntimeLinker::Init();
 #endif
-    GMPDecoderModule::Init();
   }
 };
 
@@ -374,10 +373,8 @@ PDMFactory::CreatePDMs()
     // expect it's not going to work (i.e. on Windows older than Vista).
     m = new WMFDecoderModule();
     RefPtr<PlatformDecoderModule> remote = new dom::RemoteDecoderModule(m);
-    mWMFFailedToLoad = !StartupPDM(remote);
-    if (mWMFFailedToLoad) {
-      mWMFFailedToLoad = !StartupPDM(m);
-    }
+    StartupPDM(remote);
+    mWMFFailedToLoad = !StartupPDM(m);
   } else {
     mWMFFailedToLoad = MediaPrefs::DecoderDoctorWMFDisabledIsFailure();
   }
@@ -472,6 +469,14 @@ PDMFactory::GetDecoder(const TrackInfo& aTrackInfo,
 void
 PDMFactory::SetCDMProxy(CDMProxy* aProxy)
 {
+  MOZ_ASSERT(aProxy);
+
+#ifdef MOZ_WIDGET_ANDROID
+  if (IsWidevineKeySystem(aProxy->KeySystem())) {
+    mEMEPDM = new AndroidDecoderModule(aProxy);
+    return;
+  }
+#endif
   RefPtr<PDMFactory> m = new PDMFactory();
   mEMEPDM = new EMEDecoderModule(aProxy, m);
 }

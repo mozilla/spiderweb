@@ -5,7 +5,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 TEST_DIRS += [
-    'compiledtest',
     'gtest'
 ]
 
@@ -149,7 +148,6 @@ UNIFIED_SOURCES += [
     'WebGLTexelConversions.cpp',
     'WebGLTexture.cpp',
     'WebGLTextureUpload.cpp',
-    'WebGLTimerQuery.cpp',
     'WebGLTransformFeedback.cpp',
     'WebGLUniformLocation.cpp',
     'WebGLValidateStrings.cpp',

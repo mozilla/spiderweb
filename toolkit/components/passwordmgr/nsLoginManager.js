@@ -12,7 +12,7 @@ Cu.import("resource://gre/modules/AppConstants.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Timer.jsm");
-Cu.import("resource://gre/modules/LoginManagerContent.jsm"); /*global UserAutoCompleteResult */
+Cu.import("resource://gre/modules/LoginManagerContent.jsm"); /* global UserAutoCompleteResult */
 
 XPCOMUtils.defineLazyModuleGetter(this, "Promise",
                                   "resource://gre/modules/Promise.jsm");
@@ -22,6 +22,10 @@ XPCOMUtils.defineLazyModuleGetter(this, "BrowserUtils",
                                   "resource://gre/modules/BrowserUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "LoginHelper",
                                   "resource://gre/modules/LoginHelper.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "LoginFormFactory",
+                                  "resource://gre/modules/LoginManagerContent.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "InsecurePasswordUtils",
+                                  "resource://gre/modules/InsecurePasswordUtils.jsm");
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
   let logger = LoginHelper.createLogger("nsLoginManager");
@@ -478,9 +482,17 @@ LoginManager.prototype = {
     // aPreviousResult is an nsIAutoCompleteResult, aElement is
     // nsIDOMHTMLInputElement
 
+    let form = LoginFormFactory.createFromField(aElement);
+    let isSecure = InsecurePasswordUtils.isFormSecure(form);
+    let isPasswordField = aElement.type == "password";
+    if (isPasswordField) {
+      // The login items won't be filtered for password field.
+      aSearchString = "";
+    }
+
     if (!this._remember) {
       setTimeout(function() {
-        aCallback.onSearchCompletion(new UserAutoCompleteResult(aSearchString, []));
+        aCallback.onSearchCompletion(new UserAutoCompleteResult(aSearchString, [], {isSecure}));
       }, 0);
       return;
     }
@@ -508,7 +520,11 @@ LoginManager.prototype = {
 
                                this._autoCompleteLookupPromise = null;
                                let results =
-                                 new UserAutoCompleteResult(aSearchString, logins, messageManager);
+                                 new UserAutoCompleteResult(aSearchString, logins, {
+                                   messageManager,
+                                   isSecure,
+                                   isPasswordField,
+                                 });
                                aCallback.onSearchCompletion(results);
                              })
                             .then(null, Cu.reportError);

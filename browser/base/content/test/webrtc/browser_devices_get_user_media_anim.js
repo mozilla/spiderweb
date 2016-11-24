@@ -58,6 +58,10 @@ var gTests = [
 
       // And finally verify the attribute is removed when closing the stream.
       yield closeStream();
+
+      // TODO(Bug 1304997): Fix the race in closeStream() and remove this
+      // promiseWaitForCondition().
+      yield promiseWaitForCondition(() => !tab.getAttribute("sharing"));
       is(tab.getAttribute("sharing"), "",
          "the tab no longer has the 'sharing' attribute after closing the stream");
     }
@@ -88,9 +92,9 @@ function test() {
     Task.spawn(function* () {
       yield SpecialPowers.pushPrefEnv({"set": [[PREF_PERMISSION_FAKE, true]]});
 
-      for (let test of gTests) {
-        info(test.desc);
-        yield test.run();
+      for (let testCase of gTests) {
+        info(testCase.desc);
+        yield testCase.run();
       }
     }).then(finish, ex => {
      Cu.reportError(ex);

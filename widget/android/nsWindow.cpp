@@ -1,4 +1,5 @@
 /* -*- Mode: c++; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
+ * vim: set sw=4 ts=4 expandtab:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,7 +36,6 @@ using mozilla::Unused;
 #include "nsIDOMChromeWindow.h"
 #include "nsIObserverService.h"
 #include "nsISelection.h"
-#include "nsISupportsArray.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIWidgetListener.h"
 #include "nsIWindowWatcher.h"
@@ -289,6 +289,7 @@ class nsWindow::GeckoViewSupport final
 public:
     typedef GeckoView::Window::Natives<GeckoViewSupport> Base;
     typedef GeckoEditable::Natives<GeckoViewSupport> EditableBase;
+    typedef SupportsWeakPtr<GeckoViewSupport> SupportsWeakPtr;
 
     MOZ_DECLARE_WEAKREFERENCE_TYPENAME(GeckoViewSupport);
 
@@ -325,8 +326,9 @@ public:
         , mIMETextChangedDuringFlush(false)
         , mIMEMonitorCursor(false)
     {
-        Base::AttachNative(aInstance, this);
-        EditableBase::AttachNative(mEditable, this);
+        Base::AttachNative(aInstance, static_cast<SupportsWeakPtr*>(this));
+        EditableBase::AttachNative(
+                mEditable, static_cast<SupportsWeakPtr*>(this));
     }
 
     ~GeckoViewSupport();
@@ -345,15 +347,17 @@ public:
     static void Open(const jni::Class::LocalRef& aCls,
                      GeckoView::Window::Param aWindow,
                      GeckoView::Param aView, jni::Object::Param aCompositor,
+                     jni::Object::Param aDispatcher,
                      jni::String::Param aChromeURI,
-                     int32_t aWidth, int32_t aHeight);
+                     int32_t screenId);
 
     // Close and destroy the nsWindow.
     void Close();
 
     // Reattach this nsWindow to a new GeckoView.
     void Reattach(const GeckoView::Window::LocalRef& inst,
-                  GeckoView::Param aView, jni::Object::Param aCompositor);
+                  GeckoView::Param aView, jni::Object::Param aCompositor,
+                  jni::Object::Param aDispatcher);
 
     void LoadUri(jni::String::Param aUri, int32_t aFlags);
 
@@ -400,7 +404,7 @@ private:
     AutoTArray<IMETextChange, 4> mIMETextChanges;
     InputContext mInputContext;
     RefPtr<mozilla::TextRangeArray> mIMERanges;
-    int32_t mIMEMaskEventsCount; // Mask events when > 0
+    int32_t mIMEMaskEventsCount; // Mask events when > 0.
     bool mIMEUpdatingContext;
     bool mIMESelectionChanged;
     bool mIMETextChangedDuringFlush;
@@ -415,6 +419,7 @@ private:
     };
     void PostFlushIMEChanges();
     void FlushIMEChanges(FlushChangesFlag aFlags = FLUSH_FLAG_NONE);
+    void FlushIMEText();
     void AsyncNotifyIME(int32_t aNotification);
     void UpdateCompositionRects();
 
@@ -442,9 +447,6 @@ public:
 
     // Synchronize Gecko thread with the InputConnection thread.
     void OnImeSynchronize();
-
-    // Acknowledge focus change and send new text and selection.
-    void OnImeAcknowledgeFocus();
 
     // Replace a range of text with new text.
     void OnImeReplaceText(int32_t aStart, int32_t aEnd,
@@ -932,6 +934,10 @@ public:
 template<> const char
 nsWindow::NativePtr<nsWindow::NPZCSupport>::sName[] = "NPZCSupport";
 
+NS_IMPL_ISUPPORTS(nsWindow::AndroidView,
+                  nsIAndroidEventDispatcher,
+                  nsIAndroidView)
+
 /**
  * Compositor has some unique requirements for its native calls, so make it
  * separate from GeckoViewSupport.
@@ -1320,8 +1326,9 @@ nsWindow::GeckoViewSupport::Open(const jni::Class::LocalRef& aCls,
                                  GeckoView::Window::Param aWindow,
                                  GeckoView::Param aView,
                                  jni::Object::Param aCompositor,
+                                 jni::Object::Param aDispatcher,
                                  jni::String::Param aChromeURI,
-                                 int32_t aWidth, int32_t aHeight)
+                                 int32_t aScreenId)
 {
     MOZ_ASSERT(NS_IsMainThread());
 
@@ -1341,25 +1348,13 @@ nsWindow::GeckoViewSupport::Open(const jni::Class::LocalRef& aCls,
         }
     }
 
-    nsCOMPtr<nsISupportsArray> args
-            = do_CreateInstance(NS_SUPPORTSARRAY_CONTRACTID);
-    nsCOMPtr<nsISupportsPRInt32> widthArg
-            = do_CreateInstance(NS_SUPPORTS_PRINT32_CONTRACTID);
-    nsCOMPtr<nsISupportsPRInt32> heightArg
-            = do_CreateInstance(NS_SUPPORTS_PRINT32_CONTRACTID);
-
-    // Arguments are optional so it's okay if this fails.
-    if (args && widthArg && heightArg &&
-            NS_SUCCEEDED(widthArg->SetData(aWidth)) &&
-            NS_SUCCEEDED(heightArg->SetData(aHeight)))
-    {
-        args->AppendElement(widthArg);
-        args->AppendElement(heightArg);
-    }
+    RefPtr<AndroidView> androidView = new AndroidView();
+    androidView->mEventDispatcher->Attach(
+            java::EventDispatcher::Ref::From(aDispatcher), nullptr);
 
     nsCOMPtr<mozIDOMWindowProxy> domWindow;
-    ww->OpenWindow(nullptr, url, nullptr, "chrome,dialog=0,resizable",
-                   args, getter_AddRefs(domWindow));
+    ww->OpenWindow(nullptr, url, nullptr, "chrome,dialog=0,resizable,scrollbars=yes",
+                   androidView, getter_AddRefs(domWindow));
     MOZ_RELEASE_ASSERT(domWindow);
 
     nsCOMPtr<nsPIDOMWindowOuter> pdomWindow =
@@ -1368,6 +1363,7 @@ nsWindow::GeckoViewSupport::Open(const jni::Class::LocalRef& aCls,
     MOZ_ASSERT(widget);
 
     const auto window = static_cast<nsWindow*>(widget.get());
+    window->SetScreenId(aScreenId);
 
     // Attach a new GeckoView support object to the new window.
     window->mGeckoViewSupport  = mozilla::MakeUnique<GeckoViewSupport>(
@@ -1379,6 +1375,11 @@ nsWindow::GeckoViewSupport::Open(const jni::Class::LocalRef& aCls,
     auto compositor = LayerView::Compositor::LocalRef(
             aCls.Env(), LayerView::Compositor::Ref::From(aCompositor));
     window->mLayerViewSupport.Attach(compositor, window, compositor);
+
+    // Attach again using the new window.
+    androidView->mEventDispatcher->Attach(
+            java::EventDispatcher::Ref::From(aDispatcher), pdomWindow);
+    window->mAndroidView = androidView;
 
     if (window->mWidgetListener) {
         nsCOMPtr<nsIXULWindow> xulWindow(
@@ -1394,6 +1395,10 @@ nsWindow::GeckoViewSupport::Open(const jni::Class::LocalRef& aCls,
 void
 nsWindow::GeckoViewSupport::Close()
 {
+    if (window.mAndroidView) {
+        window.mAndroidView->mEventDispatcher->Detach();
+    }
+
     if (!mDOMWindow) {
         return;
     }
@@ -1405,7 +1410,8 @@ nsWindow::GeckoViewSupport::Close()
 void
 nsWindow::GeckoViewSupport::Reattach(const GeckoView::Window::LocalRef& inst,
                                      GeckoView::Param aView,
-                                     jni::Object::Param aCompositor)
+                                     jni::Object::Param aCompositor,
+                                     jni::Object::Param aDispatcher)
 {
     // Associate our previous GeckoEditable with the new GeckoView.
     mEditable->OnViewChange(aView);
@@ -1423,6 +1429,10 @@ nsWindow::GeckoViewSupport::Reattach(const GeckoView::Window::LocalRef& inst,
             inst.Env(), LayerView::Compositor::Ref::From(aCompositor));
     window.mLayerViewSupport.Attach(compositor, &window, compositor);
     compositor->Reattach();
+
+    MOZ_ASSERT(window.mAndroidView);
+    window.mAndroidView->mEventDispatcher->Attach(
+            java::EventDispatcher::Ref::From(aDispatcher), mDOMWindow);
 }
 
 void
@@ -1510,6 +1520,7 @@ nsWindow::DumpWindows(const nsTArray<nsWindow*>& wins, int indent)
 }
 
 nsWindow::nsWindow() :
+    mScreenId(0), // Use 0 (primary screen) as the default value.
     mIsVisible(false),
     mParent(nullptr),
     mAwaitingFullScreen(false),
@@ -1671,19 +1682,11 @@ nsWindow::GetDPI()
 double
 nsWindow::GetDefaultScaleInternal()
 {
-    static double density = 0.0;
 
-    if (density != 0.0) {
-        return density;
-    }
-
-    density = GeckoAppShell::GetDensity();
-
-    if (!density) {
-        density = 1.0;
-    }
-
-    return density;
+    nsCOMPtr<nsIScreen> screen = GetWidgetScreen();
+    MOZ_ASSERT(screen);
+    RefPtr<nsScreenAndroid> screenAndroid = (nsScreenAndroid*) screen.get();
+    return screenAndroid->GetDensity();
 }
 
 NS_IMETHODIMP
@@ -2612,7 +2615,7 @@ nsWindow::GetIMEComposition()
     Remove the composition but leave the text content as-is
 */
 void
-nsWindow::RemoveIMEComposition()
+nsWindow::RemoveIMEComposition(RemoveIMECompositionFlag aFlag)
 {
     // Remove composition on Gecko side
     const RefPtr<mozilla::TextComposition> composition(GetIMEComposition());
@@ -2622,13 +2625,11 @@ nsWindow::RemoveIMEComposition()
 
     RefPtr<nsWindow> kungFuDeathGrip(this);
 
-    // We have to use eCompositionCommit instead of eCompositionCommitAsIs
-    // because TextComposition has a workaround for eCompositionCommitAsIs
-    // that prevents compositions containing a single ideographic space
-    // character from working (see bug 1209465)..
     WidgetCompositionEvent compositionCommitEvent(
             true, eCompositionCommit, this);
-    compositionCommitEvent.mData = composition->String();
+    if (aFlag == COMMIT_IME_COMPOSITION) {
+        compositionCommitEvent.mMessage = eCompositionCommitAsIs;
+    }
     InitEvent(compositionCommitEvent, nullptr);
     DispatchEvent(&compositionCommitEvent);
 }
@@ -2846,6 +2847,25 @@ nsWindow::GeckoViewSupport::FlushIMEChanges(FlushChangesFlag aFlags)
     }
 }
 
+void
+nsWindow::GeckoViewSupport::FlushIMEText()
+{
+    // Notify Java of the newly focused content
+    mIMETextChanges.Clear();
+    mIMESelectionChanged = true;
+
+    // Use 'INT32_MAX / 2' here because subsequent text changes might combine
+    // with this text change, and overflow might occur if we just use
+    // INT32_MAX.
+    IMENotification notification(NOTIFY_IME_OF_TEXT_CHANGE);
+    notification.mTextChangeData.mStartOffset = 0;
+    notification.mTextChangeData.mRemovedEndOffset = INT32_MAX / 2;
+    notification.mTextChangeData.mAddedEndOffset = INT32_MAX / 2;
+    NotifyIME(notification);
+
+    FlushIMEChanges();
+}
+
 static jni::ObjectArray::LocalRef
 ConvertRectArrayToJavaRectFArray(JNIEnv* aJNIEnv, const nsTArray<LayoutDeviceIntRect>& aRects, const LayoutDeviceIntPoint& aOffset, const CSSToLayoutDeviceScale aScale)
 {
@@ -2919,16 +2939,8 @@ nsWindow::GeckoViewSupport::NotifyIME(const IMENotification& aIMENotification)
 
         case REQUEST_TO_CANCEL_COMPOSITION: {
             ALOGIME("IME: REQUEST_TO_CANCEL_COMPOSITION");
-            RefPtr<nsWindow> kungFuDeathGrip(&window);
 
-            // Cancel composition on Gecko side
-            if (window.GetIMEComposition()) {
-                WidgetCompositionEvent compositionCommitEvent(
-                        true, eCompositionCommit, &window);
-                window.InitEvent(compositionCommitEvent, nullptr);
-                // Dispatch it with empty mData value for canceling composition.
-                window.DispatchEvent(&compositionCommitEvent);
-            }
+            window.RemoveIMEComposition(CANCEL_IME_COMPOSITION);
 
             AsyncNotifyIME(GeckoEditableListener::
                            NOTIFY_IME_TO_CANCEL_COMPOSITION);
@@ -2937,22 +2949,39 @@ nsWindow::GeckoViewSupport::NotifyIME(const IMENotification& aIMENotification)
 
         case NOTIFY_IME_OF_FOCUS: {
             ALOGIME("IME: NOTIFY_IME_OF_FOCUS");
-            // IME will call requestCursorUpdates after getting context.
-            // So reset cursor update mode before getting context.
-            mIMEMonitorCursor = false;
-            mEditable->NotifyIME(GeckoEditableListener::NOTIFY_IME_OF_FOCUS);
+            // Keep a strong reference to the window to keep 'this' alive.
+            RefPtr<nsWindow> window(&this->window);
+
+            // Post an event because we have to flush the text before sending a
+            // focus event, and we may not be able to flush text during the
+            // NotifyIME call.
+            nsAppShell::PostEvent([this, window] {
+                --mIMEMaskEventsCount;
+                if (mIMEMaskEventsCount || window->Destroyed()) {
+                    return;
+                }
+
+                FlushIMEText();
+
+                // IME will call requestCursorUpdates after getting context.
+                // So reset cursor update mode before getting context.
+                mIMEMonitorCursor = false;
+
+                MOZ_ASSERT(mEditable);
+                mEditable->NotifyIME(GeckoEditableListener::NOTIFY_IME_OF_FOCUS);
+            });
             return true;
         }
 
         case NOTIFY_IME_OF_BLUR: {
             ALOGIME("IME: NOTIFY_IME_OF_BLUR");
 
-            // Mask events because we lost focus. On the next focus event,
-            // Gecko will notify Java, and Java will send an acknowledge focus
-            // event back to Gecko. That is where we unmask event handling
-            mIMEMaskEventsCount++;
+            if (!mIMEMaskEventsCount) {
+                mEditable->NotifyIME(GeckoEditableListener::NOTIFY_IME_OF_BLUR);
+            }
 
-            mEditable->NotifyIME(GeckoEditableListener::NOTIFY_IME_OF_BLUR);
+            // Mask events because we lost focus. Unmask on the next focus.
+            mIMEMaskEventsCount++;
             return true;
         }
 
@@ -3069,33 +3098,6 @@ nsWindow::GeckoViewSupport::OnImeSynchronize()
 }
 
 void
-nsWindow::GeckoViewSupport::OnImeAcknowledgeFocus()
-{
-    MOZ_ASSERT(mIMEMaskEventsCount > 0);
-
-    AutoIMESynchronize as(this);
-
-    if (--mIMEMaskEventsCount > 0) {
-        // Still not focused; reply to events, but don't do anything else.
-        return;
-    }
-
-    // The focusing handshake sequence is complete, and Java is waiting
-    // on Gecko. Now we can notify Java of the newly focused content
-    mIMETextChanges.Clear();
-    mIMESelectionChanged = false;
-    // NotifyIMEOfTextChange also notifies selection
-    // Use 'INT32_MAX / 2' here because subsequent text changes might
-    // combine with this text change, and overflow might occur if
-    // we just use INT32_MAX
-    IMENotification notification(NOTIFY_IME_OF_TEXT_CHANGE);
-    notification.mTextChangeData.mStartOffset = 0;
-    notification.mTextChangeData.mRemovedEndOffset =
-        notification.mTextChangeData.mAddedEndOffset = INT32_MAX / 2;
-    NotifyIME(notification);
-}
-
-void
 nsWindow::GeckoViewSupport::OnImeReplaceText(int32_t aStart, int32_t aEnd,
                                              jni::String::Param aText)
 {
@@ -3114,6 +3116,8 @@ nsWindow::GeckoViewSupport::OnImeReplaceText(int32_t aStart, int32_t aEnd,
 
     const auto composition(window.GetIMEComposition());
     MOZ_ASSERT(!composition || !composition->IsEditorHandlingEvent());
+
+    const bool composing = !mIMERanges->IsEmpty();
 
     if (!mIMEKeyEvents.IsEmpty() || !composition ||
         uint32_t(aStart) != composition->NativeOffsetOfStartComposition() ||
@@ -3158,7 +3162,16 @@ nsWindow::GeckoViewSupport::OnImeReplaceText(int32_t aStart, int32_t aEnd,
             return;
         }
 
-        {
+        if (aStart != aEnd) {
+            // Perform a deletion first.
+            WidgetContentCommandEvent event(
+                    true, eContentCommandDelete, &window);
+            window.InitEvent(event, nullptr);
+            window.DispatchEvent(&event);
+        }
+
+        // Start a composition if we're not just performing a deletion.
+        if (composing || !string.IsEmpty()) {
             WidgetCompositionEvent event(true, eCompositionStart, &window);
             window.InitEvent(event, nullptr);
             window.DispatchEvent(&event);
@@ -3175,9 +3188,8 @@ nsWindow::GeckoViewSupport::OnImeReplaceText(int32_t aStart, int32_t aEnd,
         AddIMETextChange(dummyChange);
     }
 
-    const bool composing = !mIMERanges->IsEmpty();
-
-    // Previous events may have destroyed our composition; bail in that case.
+    // Check composition again because previous events may have destroyed our
+    // composition; in which case we should just skip the next event.
     if (window.GetIMEComposition()) {
         WidgetCompositionEvent event(true, eCompositionChange, &window);
         window.InitEvent(event, nullptr);
@@ -3186,15 +3198,8 @@ nsWindow::GeckoViewSupport::OnImeReplaceText(int32_t aStart, int32_t aEnd,
         if (composing) {
             event.mRanges = new TextRangeArray();
             mIMERanges.swap(event.mRanges);
-
-        } else if (event.mData.Length()) {
-            // Include proper text ranges to make the editor happy.
-            TextRange range;
-            range.mStartOffset = 0;
-            range.mEndOffset = event.mData.Length();
-            range.mRangeType = TextRangeType::eRawClause;
-            event.mRanges = new TextRangeArray();
-            event.mRanges->AppendElement(range);
+        } else {
+            event.mMessage = eCompositionCommit;
         }
 
         window.DispatchEvent(&event);
@@ -3202,11 +3207,6 @@ nsWindow::GeckoViewSupport::OnImeReplaceText(int32_t aStart, int32_t aEnd,
     } else if (composing) {
         // Ensure IME ranges are empty.
         mIMERanges->Clear();
-    }
-
-    // Don't end composition when composing text or composition was destroyed.
-    if (!composing) {
-        window.RemoveIMEComposition();
     }
 
     if (mInputContext.mMayBeIMEUnaware) {
@@ -3244,8 +3244,6 @@ nsWindow::GeckoViewSupport::OnImeAddCompositionRange(
 void
 nsWindow::GeckoViewSupport::OnImeUpdateComposition(int32_t aStart, int32_t aEnd)
 {
-    AutoIMESynchronize as(this);
-
     if (mIMEMaskEventsCount > 0) {
         // Not focused.
         return;
@@ -3491,13 +3489,13 @@ nsWindow::SynthesizeNativeMouseMove(LayoutDeviceIntPoint aPoint,
 }
 
 bool
-nsWindow::PreRender(LayerManagerComposite* aManager)
+nsWindow::PreRender(WidgetRenderingContext* aContext)
 {
     if (Destroyed()) {
         return true;
     }
 
-    layers::Compositor* compositor = aManager->GetCompositor();
+    layers::Compositor* compositor = aContext->mCompositor;
 
     GeckoLayerClient::LocalRef client;
 
@@ -3513,7 +3511,7 @@ nsWindow::PreRender(LayerManagerComposite* aManager)
     return true;
 }
 void
-nsWindow::DrawWindowUnderlay(LayerManagerComposite* aManager,
+nsWindow::DrawWindowUnderlay(WidgetRenderingContext* aContext,
                              LayoutDeviceIntRect aRect)
 {
     if (Destroyed()) {
@@ -3544,7 +3542,7 @@ nsWindow::DrawWindowUnderlay(LayerManagerComposite* aManager,
 }
 
 void
-nsWindow::DrawWindowOverlay(LayerManagerComposite* aManager,
+nsWindow::DrawWindowOverlay(WidgetRenderingContext* aContext,
                             LayoutDeviceIntRect aRect)
 {
     PROFILER_LABEL("nsWindow", "DrawWindowOverlay",
@@ -3615,7 +3613,20 @@ nsWindow::UpdateZoomConstraints(const uint32_t& aPresShellId,
 CompositorBridgeParent*
 nsWindow::GetCompositorBridgeParent() const
 {
-  return mCompositorSession ? mCompositorSession->GetInProcessBridge() : nullptr;
+    return mCompositorSession ? mCompositorSession->GetInProcessBridge() : nullptr;
+}
+
+already_AddRefed<nsIScreen>
+nsWindow::GetWidgetScreen()
+{
+    nsCOMPtr<nsIScreenManager> screenMgr =
+        do_GetService("@mozilla.org/gfx/screenmanager;1");
+    MOZ_ASSERT(screenMgr, "Failed to get nsIScreenManager");
+
+    nsCOMPtr<nsIScreen> screen;
+    screenMgr->ScreenForId(mScreenId, getter_AddRefs(screen));
+
+    return screen.forget();
 }
 
 jni::DependentRef<java::GeckoLayerClient>

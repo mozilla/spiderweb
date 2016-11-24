@@ -6,7 +6,6 @@ import imp
 import os
 import re
 import sys
-import socket
 import time
 import types
 import unittest
@@ -76,7 +75,8 @@ class CommonTestCase(unittest.TestCase):
     pydebugger = None
 
     def __init__(self, methodName, **kwargs):
-        unittest.TestCase.__init__(self, methodName)
+        super(CommonTestCase, self).__init__(methodName)
+
         self.loglines = []
         self.duration = 0
         self.start_time = 0
@@ -224,7 +224,8 @@ class CommonTestCase(unittest.TestCase):
         return m is not None
 
     @classmethod
-    def add_tests_to_suite(cls, mod_name, filepath, suite, testloader, marionette, testvars):
+    def add_tests_to_suite(cls, mod_name, filepath, suite, testloader, marionette,
+                           httpd, testvars):
         """Add all the tests in the specified file to the specified suite."""
         raise NotImplementedError
 
@@ -251,12 +252,12 @@ class CommonTestCase(unittest.TestCase):
         # proper garbage collection.
         self.start_time = time.time()
         self.marionette = self._marionette_weakref()
+        self.httpd = self._httpd_weakref()
         if self.marionette.session is None:
             self.marionette.start_session()
         self.marionette.reset_timeouts()
 
-    def tearDown(self):
-        pass
+        super(CommonTestCase, self).setUp()
 
     def cleanTest(self):
         self._deleteSession()
@@ -272,13 +273,9 @@ class CommonTestCase(unittest.TestCase):
                     self.loglines = [['Error getting log: {}'.format(inst)]]
                 try:
                     self.marionette.delete_session()
-                except (socket.error, MarionetteException, IOError):
+                except IOError:
                     # Gecko has crashed?
-                    self.marionette.session = None
-                    try:
-                        self.marionette.client.close()
-                    except socket.error:
-                        pass
+                    pass
         self.marionette = None
 
     def setup_SpecialPowers_observer(self):
@@ -424,19 +421,21 @@ class MarionetteTestCase(CommonTestCase):
 
     match_re = re.compile(r"test_(.*)\.py$")
 
-    def __init__(self, marionette_weakref, methodName='runTest',
+    def __init__(self, marionette_weakref, httpd_weakref, methodName='runTest',
                  filepath='', **kwargs):
         self._marionette_weakref = marionette_weakref
-        self.marionette = None
+        self._httpd_weakref = httpd_weakref
         self.methodName = methodName
         self.filepath = filepath
         self.testvars = kwargs.pop('testvars', None)
-        self.test_container = kwargs.pop('test_container', None)
-        CommonTestCase.__init__(self, methodName, **kwargs)
+
+        self.marionette = None
+
+        super(MarionetteTestCase, self).__init__(methodName, **kwargs)
 
     @classmethod
     def add_tests_to_suite(cls, mod_name, filepath, suite, testloader, marionette,
-                           testvars, **kwargs):
+                           httpd, testvars, **kwargs):
         # since we use imp.load_source to load test modules, if a module
         # is loaded with the same name as another one the module would just be
         # reloaded.
@@ -460,13 +459,14 @@ class MarionetteTestCase(CommonTestCase):
                 testnames = testloader.getTestCaseNames(obj)
                 for testname in testnames:
                     suite.addTest(obj(weakref.ref(marionette),
-                                  methodName=testname,
-                                  filepath=filepath,
-                                  testvars=testvars,
-                                  **kwargs))
+                                      weakref.ref(httpd),
+                                      methodName=testname,
+                                      filepath=filepath,
+                                      testvars=testvars,
+                                      **kwargs))
 
     def setUp(self):
-        CommonTestCase.setUp(self)
+        super(MarionetteTestCase, self).setUp()
         self.marionette.test_name = self.test_name
         self.marionette.execute_script("log('TEST-START: {0}:{1}')"
                                        .format(self.filepath.replace('\\', '\\\\'),
@@ -479,7 +479,7 @@ class MarionetteTestCase(CommonTestCase):
         if not self.marionette.session:
             self.marionette.start_session()
 
-        if not self.marionette.check_for_crash():
+        if not self.marionette.crashed:
             try:
                 self.marionette.clear_imported_scripts()
                 self.marionette.execute_script("log('TEST-END: {0}:{1}')"
@@ -492,7 +492,7 @@ class MarionetteTestCase(CommonTestCase):
                 # object that we can access
                 pass
 
-        CommonTestCase.tearDown(self)
+        super(MarionetteTestCase, self).tearDown()
 
     def wait_for_condition(self, method, timeout=30):
         timeout = float(timeout) + time.time()
@@ -503,46 +503,3 @@ class MarionetteTestCase(CommonTestCase):
             time.sleep(0.5)
         else:
             raise TimeoutException("wait_for_condition timed out")
-
-
-class MarionetteJSTestCase(CommonTestCase):
-
-    match_re = re.compile(r"test_(.*)\.js$")
-
-    def __init__(self, marionette_weakref, methodName='runTest', jsFile=None, **kwargs):
-        assert(jsFile)
-        self.jsFile = jsFile
-        self._marionette_weakref = marionette_weakref
-        self.marionette = None
-        self.test_container = kwargs.pop('test_container', None)
-        CommonTestCase.__init__(self, methodName)
-
-    @classmethod
-    def add_tests_to_suite(cls, mod_name, filepath, suite, testloader, marionette,
-                           testvars, **kwargs):
-        suite.addTest(cls(weakref.ref(marionette), jsFile=filepath, **kwargs))
-
-    def runTest(self):
-        if self.marionette.session is None:
-            self.marionette.start_session()
-        self.marionette.execute_script(
-            "log('TEST-START: {}');".format(self.jsFile.replace('\\', '\\\\')),
-            sandbox="simpletest")
-
-        self.run_js_test(self.jsFile)
-
-        self.marionette.execute_script(
-            "log('TEST-END:{}s');".format(self.jsFile.replace('\\', '\\\\')),
-            sandbox="simpletest")
-        self.marionette.test_name = None
-
-    def get_test_class_name(self):
-        # returns a dot separated folders as class name
-        dirname = os.path.dirname(self.jsFile).replace('\\', '/')
-        if dirname.startswith('/'):
-            dirname = dirname[1:]
-        return '.'.join(dirname.split('/'))
-
-    def get_test_method_name(self):
-        # returns the js filename without extension as method name
-        return os.path.splitext(os.path.basename(self.jsFile))[0]

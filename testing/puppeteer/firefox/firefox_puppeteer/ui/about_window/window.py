@@ -17,9 +17,6 @@ class AboutWindow(BaseWindow):
         'chrome://browser/locale/aboutDialog.dtd',
     ]
 
-    def __init__(self, *args, **kwargs):
-        BaseWindow.__init__(self, *args, **kwargs)
-
     @property
     def deck(self):
         """The :class:`Deck` instance which represents the deck.
@@ -29,7 +26,7 @@ class AboutWindow(BaseWindow):
         self.switch_to()
 
         deck = self.window_element.find_element(By.ID, 'updateDeck')
-        return Deck(lambda: self.marionette, self, deck)
+        return Deck(self.marionette, self, deck)
 
 
 Windows.register_window(AboutWindow.window_type, AboutWindow)

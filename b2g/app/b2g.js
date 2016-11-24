@@ -200,7 +200,6 @@ pref("privacy.item.syncAccount", true);
 
 // base url for the wifi geolocation network provider
 pref("geo.provider.use_mls", false);
-pref("geo.cell.scan", true);
 pref("geo.wifi.uri", "https://location.services.mozilla.com/v1/geolocate?key=%MOZILLA_API_KEY%");
 
 // base url for the stumbler
@@ -390,9 +389,6 @@ pref("dom.ipc.browser_frames.oop_by_default", false);
 pref("dom.meta-viewport.enabled", true);
 #endif
 
-// SMS/MMS
-pref("dom.sms.enabled", true);
-
 //The waiting time in network manager.
 pref("network.gonk.ms-release-mms-connection", 30000);
 
@@ -404,15 +400,8 @@ pref("dom.phonenumber.substringmatching.VE", 7);
 pref("dom.phonenumber.substringmatching.CL", 8);
 pref("dom.phonenumber.substringmatching.PE", 7);
 
-// NetworkStats
 #ifdef MOZ_WIDGET_GONK
-pref("dom.mozNetworkStats.enabled", true);
 pref("dom.webapps.firstRunWithSIM", true);
-#endif
-
-// ResourceStats
-#ifdef MOZ_WIDGET_GONK
-pref("dom.resource_stats.enabled", true);
 #endif
 
 #ifdef MOZ_B2G_RIL
@@ -422,7 +411,6 @@ pref("dom.mozApps.single_variant_sourcedir", "/persist/svoperapps");
 
 // WebSettings
 pref("dom.mozSettings.enabled", true);
-pref("dom.mozPermissionSettings.enabled", true);
 
 // controls if we want camera support
 pref("device.camera.enabled", true);
@@ -510,9 +498,6 @@ pref("app.update.socket.maxErrors", 20);
 // Enable update logging for now, to diagnose growing pains in the
 // field.
 pref("app.update.log", true);
-
-// SystemUpdate API
-pref("dom.system_update.active", "@mozilla.org/updates/update-prompt;1");
 #else
 // Explicitly disable the shutdown watchdog.  It's enabled by default.
 // When the updater is disabled, we want to know about shutdown hangs.
@@ -542,7 +527,6 @@ pref("dom.webapps.useCurrentProfile", true);
 // Enable system message
 pref("dom.sysmsg.enabled", true);
 pref("media.plugins.enabled", false);
-pref("media.omx.enabled", true);
 pref("media.rtsp.enabled", true);
 pref("media.rtsp.video.enabled", true);
 
@@ -623,9 +607,6 @@ pref("hal.processPriorityManager.gonk.MASTER.OomScoreAdjust", 0);
 pref("hal.processPriorityManager.gonk.MASTER.KillUnderKB", 4096);
 pref("hal.processPriorityManager.gonk.MASTER.cgroup", "");
 
-pref("hal.processPriorityManager.gonk.PREALLOC.OomScoreAdjust", 67);
-pref("hal.processPriorityManager.gonk.PREALLOC.cgroup", "apps/bg_non_interactive");
-
 pref("hal.processPriorityManager.gonk.FOREGROUND_HIGH.OomScoreAdjust", 67);
 pref("hal.processPriorityManager.gonk.FOREGROUND_HIGH.KillUnderKB", 5120);
 pref("hal.processPriorityManager.gonk.FOREGROUND_HIGH.cgroup", "apps/critical");
@@ -702,12 +683,6 @@ pref("gonk.notifySoftLowMemUnderKB", 43008);
 // memory pressure event.  (When we're not under memory pressure, we sit
 // blocked on a poll(), and this pref has no effect.)
 pref("gonk.systemMemoryPressureRecoveryPollMS", 5000);
-
-// Enable pre-launching content processes for improved startup time
-// (hiding latency).
-pref("dom.ipc.processPrelaunch.enabled", true);
-// Wait this long before pre-launching a new subprocess.
-pref("dom.ipc.processPrelaunch.delayMs", 5000);
 
 pref("dom.ipc.reuse_parent_app", false);
 
@@ -790,9 +765,6 @@ pref("memory.dump_reports_on_oom", false);
 
 pref("layout.framevisibility.numscrollportwidths", 1);
 pref("layout.framevisibility.numscrollportheights", 1);
-
-// Enable native identity (persona/browserid)
-pref("dom.identity.enabled", true);
 
 // Wait up to this much milliseconds when orientation changed
 pref("layers.orientation.sync.timeout", 1000);
@@ -879,18 +851,6 @@ pref("gfx.screen-mirroring.enabled", true);
 // The url of the page used to display network error details.
 pref("b2g.neterror.url", "net_error.html");
 
-// The origin used for the shared themes uri space.
-pref("b2g.theme.origin", "app://theme.gaiamobile.org");
-pref("dom.mozApps.themable", true);
-pref("dom.mozApps.selected_theme", "default_theme.gaiamobile.org");
-
-// Enable PAC generator for B2G.
-pref("network.proxy.pac_generator", true);
-
-// List of app origins to apply browsing traffic proxy setting, separated by
-// comma.  Specify '*' in the list to apply to all apps.
-pref("network.proxy.browsing.app_origins", "app://system.gaiamobile.org");
-
 // Enable Web Speech synthesis API
 pref("media.webspeech.synth.enabled", true);
 
@@ -946,7 +906,6 @@ pref("browser.autofocus", false);
 pref("dom.wakelock.enabled", true);
 
 // Enable webapps add-ons
-pref("dom.apps.customization.enabled", true);
 pref("dom.apps.reviewer_paths", "/reviewers/,/extension/reviewers/");
 
 // New implementation to unify touch-caret and selection-carets.
@@ -962,7 +921,7 @@ pref("layout.accessiblecaret.timeout_ms", 3000);
 // Hide carets and text selection dialog during scrolling.
 pref("layout.accessiblecaret.always_show_when_scrolling", false);
 
-// Enable sync and mozId with Firefox Accounts.
+// Enable sync with Firefox Accounts.
 pref("services.sync.fxaccounts.enabled", true);
 pref("identity.fxaccounts.enabled", true);
 
@@ -974,9 +933,6 @@ pref("identity.fxaccounts.skipDeviceRegistration", true);
 
 // Enable mapped array buffer.
 pref("dom.mapped_arraybuffer.enabled", true);
-
-// SystemUpdate API
-pref("dom.system_update.enabled", true);
 
 // UDPSocket API
 pref("dom.udpsocket.enabled", true);
@@ -1024,13 +980,6 @@ pref("layers.compositor-lru-size", 10);
 
 // In B2G by deafult any AudioChannelAgent is muted when created.
 pref("dom.audiochannel.mutedByDefault", true);
-
-// The app origin of bluetooth app, which is responsible for listening pairing
-// requests.
-pref("dom.bluetooth.app-origin", "app://bluetooth.gaiamobile.org");
-
-// Enable W3C WebBluetooth API and disable B2G only GATT client API.
-pref("dom.bluetooth.webbluetooth.enabled", false);
 
 // Default device name for Presentation API
 pref("dom.presentation.device.name", "Firefox OS");

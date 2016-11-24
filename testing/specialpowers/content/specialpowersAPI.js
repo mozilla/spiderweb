@@ -1172,50 +1172,6 @@ SpecialPowersAPI.prototype = {
     }
   },
 
-  // Disables the app install prompt for the duration of this test. There is
-  // no need to re-enable the prompt at the end of the test.
-  //
-  // The provided callback is invoked once the prompt is disabled.
-  autoConfirmAppInstall: function(cb) {
-    this.pushPrefEnv({set: [['dom.mozApps.auto_confirm_install', true]]}, cb);
-  },
-
-  autoConfirmAppUninstall: function(cb) {
-    this.pushPrefEnv({set: [['dom.mozApps.auto_confirm_uninstall', true]]}, cb);
-  },
-
-  // Allow tests to install addons without signing the package, for convenience.
-  allowUnsignedAddons: function() {
-    this._sendSyncMessage("SPWebAppService", {
-      op: "allow-unsigned-addons"
-    });
-  },
-
-  // Turn on debug information from UserCustomizations.jsm
-  debugUserCustomizations: function(value) {
-    this._sendSyncMessage("SPWebAppService", {
-      op: "debug-customizations",
-      value: value
-    });
-  },
-
-  // Force-registering an app in the registry
-  injectApp: function(aAppId, aApp) {
-    this._sendSyncMessage("SPWebAppService", {
-      op: "inject-app",
-      appId: aAppId,
-      app: aApp
-    });
-  },
-
-  // Removing app from the registry
-  rejectApp: function(aAppId) {
-    this._sendSyncMessage("SPWebAppService", {
-      op: "reject-app",
-      appId: aAppId
-    });
-  },
-
   _proxiedObservers: {
     "specialpowers-http-notify-request": function(aMessage) {
       let uri = aMessage.json.uri;
@@ -1818,16 +1774,6 @@ SpecialPowersAPI.prototype = {
       // It's an URL.
       let uri = Services.io.newURI(arg, null, null);
       principal = secMan.createCodebasePrincipal(uri, {});
-    } else if (arg.manifestURL) {
-      // It's a thing representing an app.
-      let appsSvc = Cc["@mozilla.org/AppsService;1"]
-                      .getService(Ci.nsIAppsService)
-      let app = appsSvc.getAppByManifestURL(arg.manifestURL);
-      if (!app) {
-        throw "No app for this manifest!";
-      }
-
-      principal = app.principal;
     } else if (arg.nodePrincipal) {
       // It's a document.
       // In some tests the arg is a wrapped DOM element, so we unwrap it first.
@@ -2128,9 +2074,14 @@ SpecialPowersAPI.prototype = {
                                 {nativeAnonymousChildList, subtree});
   },
 
-  clearAppPrivateData: function(appId, browserOnly) {
-    return this._sendAsyncMessage('SPClearAppPrivateData',
-                                  { appId: appId, browserOnly: browserOnly });
+  doCommand(window, cmd) {
+    return this._getDocShell(window).doCommand(cmd);
+  },
+
+  setCommandNode(window, node) {
+    return this._getDocShell(window).contentViewer
+               .QueryInterface(Ci.nsIContentViewerEdit)
+               .setCommandNode(node);
   },
 };
 

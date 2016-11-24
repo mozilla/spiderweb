@@ -45,14 +45,23 @@ const DelayValues WindowsCaptureDelays[NoWindowsCaptureDelays] = {
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uiMsg, WPARAM wParam, LPARAM lParam)
 {
-    if (uiMsg == WM_DEVICECHANGE)
+    DeviceInfoDS* pParent;
+    if (uiMsg == WM_CREATE)
     {
-        DeviceInfoDS* dsInfo = DeviceInfoDSSingleton::GetInfo();
-        if (dsInfo != NULL)
+        pParent = (DeviceInfoDS*)((LPCREATESTRUCT)lParam)->lpCreateParams;
+        SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)pParent);
+    }
+    else if (uiMsg == WM_DESTROY)
+    {
+        SetWindowLongPtr(hWnd, GWLP_USERDATA, NULL);
+    }
+    else if (uiMsg == WM_DEVICECHANGE)
+    {
+        pParent = (DeviceInfoDS*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+        if (pParent)
         {
-            dsInfo->DeviceChange();
+            pParent->DeviceChange();
         }
-        return 0;
     }
     return DefWindowProc(hWnd, uiMsg, wParam, lParam);
 }
@@ -76,16 +85,13 @@ void _FreeMediaType(AM_MEDIA_TYPE& mt)
 // static
 DeviceInfoDS* DeviceInfoDS::Create(const int32_t id)
 {
-    if (!DeviceInfoDSSingleton::GetInfo()) {
-        DeviceInfoDS* dsInfo = new DeviceInfoDS(id);
-        if (!dsInfo || dsInfo->Init() != 0)
-        {
-            delete dsInfo;
-            dsInfo = NULL;
-        }
-        DeviceInfoDSSingleton::GetInfo() = dsInfo;
+    DeviceInfoDS* dsInfo = new DeviceInfoDS(id);
+    if (!dsInfo || dsInfo->Init() != 0)
+    {
+        delete dsInfo;
+        dsInfo = NULL;
     }
-    return DeviceInfoDSSingleton::GetInfo();
+    return dsInfo;
 }
 
 DeviceInfoDS::DeviceInfoDS(const int32_t id)
@@ -140,7 +146,7 @@ DeviceInfoDS::DeviceInfoDS(const int32_t id)
     if (RegisterClass(&_wndClass))
     {
         _hwnd = CreateWindow(_wndClass.lpszClassName, NULL, 0, CW_USEDEFAULT,
-            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, _hInstance, NULL);
+            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, _hInstance, this);
     }
 }
 
@@ -173,7 +179,7 @@ int32_t DeviceInfoDS::Init()
 uint32_t DeviceInfoDS::NumberOfDevices()
 {
     ReadLockScoped cs(_apiLock);
-    return GetDeviceInfo(0, 0, 0, 0, 0, 0, 0);
+    return GetDeviceInfo(0, 0, 0, 0, 0, 0, 0, 0);
 }
 
 int32_t DeviceInfoDS::GetDeviceName(
@@ -183,7 +189,8 @@ int32_t DeviceInfoDS::GetDeviceName(
                                        char* deviceUniqueIdUTF8,
                                        uint32_t deviceUniqueIdUTF8Length,
                                        char* productUniqueIdUTF8,
-                                       uint32_t productUniqueIdUTF8Length)
+                                       uint32_t productUniqueIdUTF8Length,
+                                       pid_t* pid)
 {
     ReadLockScoped cs(_apiLock);
     const int32_t result = GetDeviceInfo(deviceNumber, deviceNameUTF8,
@@ -191,7 +198,8 @@ int32_t DeviceInfoDS::GetDeviceName(
                                          deviceUniqueIdUTF8,
                                          deviceUniqueIdUTF8Length,
                                          productUniqueIdUTF8,
-                                         productUniqueIdUTF8Length);
+                                         productUniqueIdUTF8Length,
+                                         pid);
     return result > (int32_t) deviceNumber ? 0 : -1;
 }
 
@@ -202,7 +210,8 @@ int32_t DeviceInfoDS::GetDeviceInfo(
                                        char* deviceUniqueIdUTF8,
                                        uint32_t deviceUniqueIdUTF8Length,
                                        char* productUniqueIdUTF8,
-                                       uint32_t productUniqueIdUTF8Length)
+                                       uint32_t productUniqueIdUTF8Length,
+                                       pid_t* pid)
 
 {
 

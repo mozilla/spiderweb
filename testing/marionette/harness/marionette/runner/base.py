@@ -22,8 +22,8 @@ import mozprofile
 
 from manifestparser import TestManifest
 from manifestparser.filters import tags
+from marionette_driver.geckoinstance import app_ids
 from marionette_driver.marionette import Marionette
-from mozlog import get_default_logger
 from moztest.adapters.unit import StructuredTestRunner, StructuredTestResult
 from moztest.results import TestResultCollection, TestResult, relevant_line
 import mozversion
@@ -296,6 +296,7 @@ class BaseMarionetteArguments(ArgumentParser):
                                "'file.ini:section' to specify a particular section.")
         self.add_argument('--addon',
                           action='append',
+                          dest='addons',
                           help="addon to install; repeat for multiple addons.")
         self.add_argument('--repeat',
                           type=int,
@@ -332,8 +333,6 @@ class BaseMarionetteArguments(ArgumentParser):
         self.add_argument('--this-chunk',
                           type=int,
                           help='which chunk to run')
-        self.add_argument('--sources',
-                          help='path to sources.xml (Firefox OS only)')
         self.add_argument('--server-root',
                           help='url to a webserver or path to a document root from which content '
                                'resources are served (default: {}).'.format(os.path.join(
@@ -434,6 +433,9 @@ class BaseMarionetteArguments(ArgumentParser):
         if not args.address and not args.binary and not args.emulator:
             self.error('You must specify --binary, or --address, or --emulator')
 
+        if not os.path.isfile(args.binary):
+            self.error('You must specify an existing binary.')
+
         if args.total_chunks is not None and args.this_chunk is None:
             self.error('You must specify which chunk to run.')
 
@@ -508,12 +510,19 @@ class BaseMarionetteTestRunner(object):
                  repeat=0, testvars=None,
                  symbols_path=None, timeout=None,
                  shuffle=False, shuffle_seed=random.randint(0, sys.maxint), this_chunk=1,
-                 total_chunks=1, sources=None,
+                 total_chunks=1,
                  server_root=None, gecko_log=None, result_callbacks=None,
                  prefs=None, test_tags=None,
                  socket_timeout=BaseMarionetteArguments.socket_timeout_default,
                  startup_timeout=None, addons=None, workspace=None,
                  verbose=0, e10s=True, emulator=False, **kwargs):
+
+        self._appinfo = None
+        self._appName = None
+        self._capabilities = None
+        self._filename_pattern = None
+        self._version_info = {}
+
         self.extra_kwargs = kwargs
         self.test_kwargs = deepcopy(kwargs)
         self.address = address
@@ -531,12 +540,8 @@ class BaseMarionetteTestRunner(object):
         self.symbols_path = symbols_path
         self.timeout = timeout
         self.socket_timeout = socket_timeout
-        self._capabilities = None
-        self._appinfo = None
-        self._appName = None
         self.shuffle = shuffle
         self.shuffle_seed = shuffle_seed
-        self.sources = sources
         self.server_root = server_root
         self.this_chunk = this_chunk
         self.total_chunks = total_chunks
@@ -553,7 +558,14 @@ class BaseMarionetteTestRunner(object):
         self.workspace_path = workspace or os.getcwd()
         self.verbose = verbose
         self.e10s = e10s
-        self._filename_pattern = None
+
+        # If no application type has been specified try to auto-detect it
+        if not self.app:
+            try:
+                app_id = self.version_info['application_id']
+                self.app = app_ids[app_id]
+            except KeyError:
+                self.logger.warning('Failed to detect the type of application.')
 
         def gather_debug(test, status):
             rv = {}
@@ -567,9 +579,8 @@ class BaseMarionetteTestRunner(object):
                         rv['screenshot'] = marionette.screenshot()
                     with marionette.using_context(marionette.CONTEXT_CONTENT):
                         rv['source'] = marionette.page_source
-                except Exception:
-                    logger = get_default_logger()
-                    logger.warning('Failed to gather test failure debug.', exc_info=True)
+                except Exception as exc:
+                    self.logger.warning('Failed to gather test failure debug: {}'.format(exc))
             return rv
 
         self.result_callbacks.append(gather_debug)
@@ -674,6 +685,17 @@ class BaseMarionetteTestRunner(object):
         return self._appName
 
     @property
+    def version_info(self):
+        if not self._version_info:
+            try:
+                # TODO: Get version_info in Fennec case
+                self._version_info = mozversion.get_version(binary=self.bin)
+            except Exception:
+                self.logger.warning("Failed to retrieve version information for {}".format(
+                    self.bin))
+        return self._version_info
+
+    @property
     def bin(self):
         return self._bin
 
@@ -759,54 +781,6 @@ class BaseMarionetteTestRunner(object):
             kwargs['workspace'] = self.workspace_path
         return kwargs
 
-    def launch_test_container(self):
-        if self.marionette.session is None:
-            self.marionette.start_session()
-        self.marionette.set_context(self.marionette.CONTEXT_CONTENT)
-
-        result = self.marionette.execute_async_script("""
-if((navigator.mozSettings == undefined) || (navigator.mozSettings == null) ||
-   (navigator.mozApps == undefined) || (navigator.mozApps == null)) {
-    marionetteScriptFinished(false);
-    return;
-}
-let setReq = navigator.mozSettings.createLock().set({'lockscreen.enabled': false});
-setReq.onsuccess = function() {
-    let appName = 'Test Container';
-    let activeApp = window.wrappedJSObject.Service.currentApp;
-
-    // if the Test Container is already open then do nothing
-    if(activeApp.name === appName){
-        marionetteScriptFinished(true);
-    }
-
-    let appsReq = navigator.mozApps.mgmt.getAll();
-    appsReq.onsuccess = function() {
-        let apps = appsReq.result;
-        for (let i = 0; i < apps.length; i++) {
-            let app = apps[i];
-            if (app.manifest.name === appName) {
-                app.launch();
-                window.addEventListener('appopen', function apploadtime(){
-                    window.removeEventListener('appopen', apploadtime);
-                    marionetteScriptFinished(true);
-                });
-                return;
-            }
-        }
-        marionetteScriptFinished(false);
-    }
-    appsReq.onerror = function() {
-        marionetteScriptFinished(false);
-    }
-}
-setReq.onerror = function() {
-    marionetteScriptFinished(false);
-}""", script_timeout=60000)
-
-        if not result:
-            raise Exception("Could not launch test container app")
-
     def record_crash(self):
         crash = True
         try:
@@ -885,16 +859,10 @@ setReq.onerror = function() {
             except Exception:
                 self.logger.warning('Could not get device info.')
 
-        # TODO: Get version_info in Fennec case
-        version_info = None
-        if self.bin:
-            version_info = mozversion.get_version(binary=self.bin,
-                                                  sources=self.sources)
-
         self.logger.info("running with e10s: {}".format(self.e10s))
 
         self.logger.suite_start(self.tests,
-                                version_info=version_info,
+                                version_info=self.version_info,
                                 device_info=device_info)
 
         self._log_skipped_tests()
@@ -975,7 +943,7 @@ setReq.onerror = function() {
         rv.start()
         return rv
 
-    def add_test(self, test, expected='pass', test_container=None):
+    def add_test(self, test, expected='pass'):
         filepath = os.path.abspath(test)
 
         if os.path.isdir(filepath):
@@ -1026,20 +994,17 @@ setReq.onerror = function() {
                     raise IOError("test file: {} does not exist".format(i["path"]))
 
                 file_ext = os.path.splitext(os.path.split(i['path'])[-1])[-1]
-                test_container = None
 
-                self.add_test(i["path"], i["expected"], test_container)
+                self.add_test(i["path"], i["expected"])
             return
 
-        self.tests.append({'filepath': filepath, 'expected': expected,
-                          'test_container': test_container})
+        self.tests.append({'filepath': filepath, 'expected': expected})
 
-    def run_test(self, filepath, expected, test_container):
+    def run_test(self, filepath, expected):
 
         testloader = unittest.TestLoader()
         suite = unittest.TestSuite()
         self.test_kwargs['expected'] = expected
-        self.test_kwargs['test_container'] = test_container
         mod_name = os.path.splitext(os.path.split(filepath)[-1])[0]
         for handler in self.test_handlers:
             if handler.match(os.path.basename(filepath)):
@@ -1048,6 +1013,7 @@ setReq.onerror = function() {
                                            suite,
                                            testloader,
                                            self.marionette,
+                                           self.httpd,
                                            self.testvars,
                                            **self.test_kwargs)
                 break
@@ -1057,9 +1023,6 @@ setReq.onerror = function() {
                                           marionette=self.marionette,
                                           capabilities=self.capabilities,
                                           result_callbacks=self.result_callbacks)
-
-            if test_container:
-                self.launch_test_container()
 
             results = runner.run(suite)
             self.results.append(results)
@@ -1091,7 +1054,7 @@ setReq.onerror = function() {
             random.shuffle(tests)
 
         for test in tests:
-            self.run_test(test['filepath'], test['expected'], test['test_container'])
+            self.run_test(test['filepath'], test['expected'])
             if self.record_crash():
                 break
 

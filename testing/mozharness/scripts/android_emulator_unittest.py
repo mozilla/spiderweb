@@ -150,8 +150,7 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
             dirs['abs_test_install_dir'], 'modules')
         dirs['abs_blob_upload_dir'] = os.path.join(
             abs_dirs['abs_work_dir'], 'blobber_upload_dir')
-        dirs['abs_emulator_dir'] = os.path.join(
-            abs_dirs['abs_work_dir'], 'emulator')
+        dirs['abs_emulator_dir'] = abs_dirs['abs_work_dir']
         dirs['abs_mochitest_dir'] = os.path.join(
             dirs['abs_test_install_dir'], 'mochitest')
         dirs['abs_marionette_dir'] = os.path.join(
@@ -560,8 +559,14 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
         # contents of the tar ball
         self.rmtree(dirs['abs_avds_dir'])
         self.mkdir_p(dirs['abs_avds_dir'])
-        url = self._get_repo_url(c["tooltool_manifest_path"])
-        self._tooltool_fetch(url, dirs['abs_avds_dir'])
+        if 'avd_url' in c:
+            # Intended for experimental setups to evaluate an avd prior to
+            # tooltool deployment.
+            url = c['avd_url']
+            self.download_unpack(url, dirs['abs_avds_dir'])
+        else:
+            url = self._get_repo_url(c["tooltool_manifest_path"])
+            self._tooltool_fetch(url, dirs['abs_avds_dir'])
 
         avd_home_dir = self.abs_dirs['abs_avds_dir']
         if avd_home_dir != "/home/cltbld/.android":
@@ -662,12 +667,13 @@ class AndroidEmulatorTest(BlobUploadMixin, TestingMixin, EmulatorMixin, VCSMixin
         """
         Install APKs on the emulator
         """
-        assert self.installer_path is not None, \
-            "Either add installer_path to the config or use --installer-path."
         install_needed = self.config["suite_definitions"][self.test_suite].get("install")
         if install_needed == False:
             self.info("Skipping apk installation for %s" % self.test_suite)
             return
+
+        assert self.installer_path is not None, \
+            "Either add installer_path to the config or use --installer-path."
 
         self.sdk_level = self._run_with_timeout(30, [self.adb_path, '-s', self.emulator['device_id'],
             'shell', 'getprop', 'ro.build.version.sdk'])

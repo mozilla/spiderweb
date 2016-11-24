@@ -96,58 +96,6 @@ LayerManager::GetRootScrollableLayerId()
       FrameMetrics::NULL_SCROLL_ID;
 }
 
-void
-LayerManager::GetRootScrollableLayers(nsTArray<Layer*>& aArray)
-{
-  if (!mRoot) {
-    return;
-  }
-
-  FrameMetrics::ViewID rootScrollableId = GetRootScrollableLayerId();
-  if (rootScrollableId == FrameMetrics::NULL_SCROLL_ID) {
-    aArray.AppendElement(mRoot);
-    return;
-  }
-
-  nsTArray<Layer*> queue = { mRoot };
-  while (queue.Length()) {
-    Layer* layer = queue[0];
-    queue.RemoveElementAt(0);
-
-    if (LayerMetricsWrapper::TopmostScrollableMetrics(layer).GetScrollId() == rootScrollableId) {
-      aArray.AppendElement(layer);
-      continue;
-    }
-
-    for (Layer* child = layer->GetFirstChild(); child; child = child->GetNextSibling()) {
-      queue.AppendElement(child);
-    }
-  }
-}
-
-void
-LayerManager::GetScrollableLayers(nsTArray<Layer*>& aArray)
-{
-  if (!mRoot) {
-    return;
-  }
-
-  nsTArray<Layer*> queue = { mRoot };
-  while (!queue.IsEmpty()) {
-    Layer* layer = queue.LastElement();
-    queue.RemoveElementAt(queue.Length() - 1);
-
-    if (layer->HasScrollableFrameMetrics()) {
-      aArray.AppendElement(layer);
-      continue;
-    }
-
-    for (Layer* child = layer->GetFirstChild(); child; child = child->GetNextSibling()) {
-      queue.AppendElement(child);
-    }
-  }
-}
-
 LayerMetricsWrapper
 LayerManager::GetRootContentLayer()
 {
@@ -483,11 +431,25 @@ Layer::SetAnimations(const AnimationArray& aAnimations)
   mAnimations = aAnimations;
   mAnimationData.Clear();
   for (uint32_t i = 0; i < mAnimations.Length(); i++) {
+    Animation& animation = mAnimations[i];
+    // Adjust fill mode to fill forwards so that if the main thread is delayed
+    // in clearing this animation we don't introduce flicker by jumping back to
+    // the old underlying value
+    switch (static_cast<dom::FillMode>(animation.fillMode())) {
+      case dom::FillMode::None:
+        animation.fillMode() = static_cast<uint8_t>(dom::FillMode::Forwards);
+        break;
+      case dom::FillMode::Backwards:
+        animation.fillMode() = static_cast<uint8_t>(dom::FillMode::Both);
+        break;
+      default:
+        break;
+    }
+
     AnimData* data = mAnimationData.AppendElement();
     InfallibleTArray<Maybe<ComputedTimingFunction>>& functions =
       data->mFunctions;
-    const InfallibleTArray<AnimationSegment>& segments =
-      mAnimations.ElementAt(i).segments();
+    const InfallibleTArray<AnimationSegment>& segments = animation.segments();
     for (uint32_t j = 0; j < segments.Length(); j++) {
       TimingFunction tf = segments.ElementAt(j).sampleFn();
 
@@ -500,8 +462,8 @@ Layer::SetAnimations(const AnimationArray& aAnimations)
     // animation.
     InfallibleTArray<StyleAnimationValue>& startValues = data->mStartValues;
     InfallibleTArray<StyleAnimationValue>& endValues = data->mEndValues;
-    for (uint32_t j = 0; j < mAnimations[i].segments().Length(); j++) {
-      const AnimationSegment& segment = mAnimations[i].segments()[j];
+    for (uint32_t j = 0; j < segments.Length(); j++) {
+      const AnimationSegment& segment = segments[j];
       StyleAnimationValue* startValue = startValues.AppendElement();
       StyleAnimationValue* endValue = endValues.AppendElement();
       if (segment.endState().type() == Animatable::TArrayOfTransformFunction) {
@@ -642,14 +604,13 @@ Layer::SnapTransformTranslation(const Matrix4x4& aTransform,
   }
 
   Matrix matrix2D;
-  Matrix4x4 result;
   if (aTransform.CanDraw2D(&matrix2D) &&
       !matrix2D.HasNonTranslation() &&
       matrix2D.HasNonIntegerTranslation()) {
     auto snappedTranslation = IntPoint::Round(matrix2D.GetTranslation());
     Matrix snappedMatrix = Matrix::Translation(snappedTranslation.x,
                                                snappedTranslation.y);
-    result = Matrix4x4::From2D(snappedMatrix);
+    Matrix4x4 result = Matrix4x4::From2D(snappedMatrix);
     if (aResidualTransform) {
       // set aResidualTransform so that aResidual * snappedMatrix == matrix2D.
       // (I.e., appying snappedMatrix after aResidualTransform gives the
@@ -661,6 +622,13 @@ Layer::SnapTransformTranslation(const Matrix4x4& aTransform,
     return result;
   }
 
+  return SnapTransformTranslation3D(aTransform, aResidualTransform);
+}
+
+Matrix4x4
+Layer::SnapTransformTranslation3D(const Matrix4x4& aTransform,
+                                  Matrix* aResidualTransform)
+{
   if(aTransform.IsSingular() ||
      aTransform.HasPerspectiveComponent() ||
      aTransform.HasNonTranslation() ||
@@ -710,7 +678,7 @@ Layer::SnapTransformTranslation(const Matrix4x4& aTransform,
   // Translate transformed origin to transformed snap since the
   // residual transform would trnslate the snap to the origin.
   Point3D transformedShift = transformedSnap - transformedOrigin;
-  result = aTransform;
+  Matrix4x4 result = aTransform;
   result.PostTranslate(transformedShift.x,
                        transformedShift.y,
                        transformedShift.z);
@@ -1703,11 +1671,11 @@ void WriteSnapshotToDumpFile_internal(T* aObj, DataSourceSurface* aSurf)
   string.Append('-');
   string.AppendInt((uint64_t)aObj);
   if (gfxUtils::sDumpPaintFile != stderr) {
-    fprintf_stderr(gfxUtils::sDumpPaintFile, "array[\"%s\"]=\"", string.BeginReading());
+    fprintf_stderr(gfxUtils::sDumpPaintFile, R"(array["%s"]=")", string.BeginReading());
   }
   gfxUtils::DumpAsDataURI(aSurf, gfxUtils::sDumpPaintFile);
   if (gfxUtils::sDumpPaintFile != stderr) {
-    fprintf_stderr(gfxUtils::sDumpPaintFile, "\";");
+    fprintf_stderr(gfxUtils::sDumpPaintFile, R"(";)");
   }
 }
 
@@ -1743,10 +1711,10 @@ Layer::Dump(std::stringstream& aStream, const char* aPrefix,
   layerId.AppendInt((uint64_t)this);
 #endif
   if (aDumpHtml) {
-    aStream << nsPrintfCString("<li><a id=\"%p\" ", this).get();
+    aStream << nsPrintfCString(R"(<li><a id="%p" )", this).get();
 #ifdef MOZ_DUMP_PAINTING
     if (dumpCompositorTexture || dumpClientTexture) {
-      aStream << nsPrintfCString("href=\"javascript:ViewImage('%s')\"", layerId.BeginReading()).get();
+      aStream << nsPrintfCString(R"lit(href="javascript:ViewImage('%s')")lit", layerId.BeginReading()).get();
     }
 #endif
     aStream << ">";
@@ -1758,12 +1726,12 @@ Layer::Dump(std::stringstream& aStream, const char* aPrefix,
     AsLayerComposite()->GetCompositableHost()->Dump(aStream, aPrefix, aDumpHtml);
   } else if (dumpClientTexture) {
     if (aDumpHtml) {
-      aStream << nsPrintfCString("<script>array[\"%s\"]=\"", layerId.BeginReading()).get();
+      aStream << nsPrintfCString(R"(<script>array["%s"]=")", layerId.BeginReading()).get();
     }
     AsShadowableLayer()->GetCompositableClient()->Dump(aStream, aPrefix,
         aDumpHtml, TextureDumpMode::DoNotCompress);
     if (aDumpHtml) {
-      aStream << "\";</script>";
+      aStream << R"(";</script>)";
     }
   }
 #endif
@@ -1907,7 +1875,7 @@ Layer::LogSelf(const char* aPrefix)
 
   if (mMaskLayer) {
     nsAutoCString pfx(aPrefix);
-    pfx += "   \\ MaskLayer ";
+    pfx += R"(   \ MaskLayer )";
     mMaskLayer->LogSelf(pfx.get());
   }
 }
@@ -2242,8 +2210,7 @@ CanvasLayer::CanvasLayer(LayerManager* aManager, void* aImplData)
   , mDirty(false)
 {}
 
-CanvasLayer::~CanvasLayer()
-{}
+CanvasLayer::~CanvasLayer() = default;
 
 void
 CanvasLayer::PrintInfo(std::stringstream& aStream, const char* aPrefix)

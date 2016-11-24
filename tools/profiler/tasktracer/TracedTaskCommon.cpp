@@ -95,7 +95,7 @@ TracedRunnable::TracedRunnable(already_AddRefed<nsIRunnable>&& aOriginalObj)
   , mOriginalObj(Move(aOriginalObj))
 {
   Init();
-  LogVirtualTablePtr(mTaskId, mSourceEventId, reinterpret_cast<uintptr_t*>(mOriginalObj.get()));
+  LogVirtualTablePtr(mTaskId, mSourceEventId, *reinterpret_cast<uintptr_t**>(mOriginalObj.get()));
 }
 
 TracedRunnable::~TracedRunnable()
@@ -115,35 +115,6 @@ TracedRunnable::Run()
 }
 
 /**
- * Implementation of class TracedTask.
- */
-TracedTask::TracedTask(Task* aOriginalObj)
-  : TracedTaskCommon()
-  , mOriginalObj(aOriginalObj)
-{
-  Init();
-  LogVirtualTablePtr(mTaskId, mSourceEventId, reinterpret_cast<uintptr_t*>(aOriginalObj));
-}
-
-TracedTask::~TracedTask()
-{
-  if (mOriginalObj) {
-    delete mOriginalObj;
-    mOriginalObj = nullptr;
-  }
-}
-
-void
-TracedTask::Run()
-{
-  SetTLSTraceInfo();
-  LogBegin(mTaskId, mSourceEventId);
-  mOriginalObj->Run();
-  LogEnd(mTaskId, mSourceEventId);
-  ClearTLSTraceInfo();
-}
-
-/**
  * CreateTracedRunnable() returns a TracedRunnable wrapping the original
  * nsIRunnable object, aRunnable.
  */
@@ -154,15 +125,17 @@ CreateTracedRunnable(already_AddRefed<nsIRunnable>&& aRunnable)
   return runnable.forget();
 }
 
-/**
- * CreateTracedTask() returns a TracedTask wrapping the original Task object,
- * aTask.
- */
-Task*
-CreateTracedTask(Task* aTask)
+VirtualTask::AutoRunTask::AutoRunTask(VirtualTask* aTask)
+  : AutoSaveCurTraceInfo()
+  , mTask(aTask)
 {
-  Task* task = new TracedTask(aTask);
-  return task;
+  mTask->SetTLSTraceInfo();
+  LogBegin(mTask->mTaskId, mTask->mSourceEventId);
+}
+
+VirtualTask::AutoRunTask::~AutoRunTask()
+{
+  LogEnd(mTask->mTaskId, mTask->mSourceEventId);
 }
 
 } // namespace tasktracer

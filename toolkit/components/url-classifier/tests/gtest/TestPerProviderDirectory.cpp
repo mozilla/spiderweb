@@ -2,9 +2,7 @@
 #include "LookupCacheV4.h"
 #include "HashStore.h"
 #include "gtest/gtest.h"
-#include "nsIThread.h"
 #include "nsAppDirectoryServiceDefs.h"
-#include "nsThreadUtils.h"
 
 namespace mozilla {
 namespace safebrowsing {
@@ -24,15 +22,6 @@ public:
 using namespace mozilla;
 using namespace mozilla::safebrowsing;
 
-template<typename Function>
-void RunTestInNewThread(Function&& aFunction) {
-  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(mozilla::Forward<Function>(aFunction));
-  nsCOMPtr<nsIThread> testingThread;
-  nsresult rv = NS_NewThread(getter_AddRefs(testingThread), r);
-  ASSERT_EQ(rv, NS_OK);
-  testingThread->Shutdown();
-}
-
 template<typename T>
 void VerifyPrivateStorePath(const char* aTableName,
                             const char* aProvider,
@@ -43,7 +32,7 @@ void VerifyPrivateStorePath(const char* aTableName,
   nsresult rv = aRootDir->GetPath(rootStorePath);
   EXPECT_EQ(rv, NS_OK);
 
-  T target(nsCString(aTableName), aRootDir);
+  T target(nsCString(aTableName), nsCString(aProvider), aRootDir);
 
   nsIFile* privateStoreDirectory =
     PerProviderDirectoryTestUtils::InspectStoreDirectory(target);

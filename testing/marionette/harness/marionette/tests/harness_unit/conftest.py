@@ -1,11 +1,13 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 import pytest
 
 from mock import Mock, MagicMock
 
 from marionette_driver.marionette import Marionette
+from marionette.runner.httpd import FixtureServer
 
 
 @pytest.fixture(scope='module')
@@ -25,7 +27,7 @@ def mach_parsed_kwargs(logger):
     """
     return {
         'adb_path': None,
-        'addon': None,
+        'addons': None,
         'address': None,
         'app': None,
         'app_args': [],
@@ -69,7 +71,6 @@ def mach_parsed_kwargs(logger):
         'shuffle': False,
         'shuffle_seed': 2276870381009474531,
         'socket_timeout': 60.0,
-        'sources': None,
         'startup_timeout': 60,
         'symbols_path': None,
         'test_tags': None,
@@ -82,6 +83,14 @@ def mach_parsed_kwargs(logger):
         'workspace': None,
         'logger': logger,
     }
+
+
+@pytest.fixture
+def mock_httpd(request):
+    """ Mock httpd instance """
+    httpd = MagicMock(spec=FixtureServer)
+    return httpd
+
 
 @pytest.fixture
 def mock_marionette(request):

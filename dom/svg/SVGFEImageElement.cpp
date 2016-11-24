@@ -95,6 +95,15 @@ SVGFEImageElement::LoadSVGImage(bool aForce, bool aNotify)
 }
 
 //----------------------------------------------------------------------
+// EventTarget methods:
+
+void
+SVGFEImageElement::AsyncEventRunning(AsyncEventDispatcher* aEvent)
+{
+  nsImageLoadingContent::AsyncEventRunning(aEvent);
+}
+
+//----------------------------------------------------------------------
 // nsIContent methods:
 
 NS_IMETHODIMP_(bool)
@@ -222,8 +231,8 @@ SVGFEImageElement::GetPrimitiveDescription(nsSVGFilterInstance* aInstance,
 
   RefPtr<SourceSurface> image;
   if (imageContainer) {
-    image = imageContainer->GetFrame(imgIContainer::FRAME_CURRENT,
-                                     imgIContainer::FLAG_SYNC_DECODE);
+    uint32_t flags = imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY;
+    image = imageContainer->GetFrame(imgIContainer::FRAME_CURRENT, flags);
   }
 
   if (!image) {

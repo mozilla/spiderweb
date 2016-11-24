@@ -11,11 +11,23 @@
  *          openContextMenu closeContextMenu
  *          openExtensionContextMenu closeExtensionContextMenu
  *          imageBuffer getListStyleImage getPanelForNode
- *          awaitExtensionPanel
+ *          awaitExtensionPanel awaitPopupResize
+ *          promiseContentDimensions alterContent
  */
 
 var {AppConstants} = Cu.import("resource://gre/modules/AppConstants.jsm");
 var {CustomizableUI} = Cu.import("resource:///modules/CustomizableUI.jsm");
+
+// We run tests under two different configurations, from browser.ini and
+// browser-remote.ini. When running from browser-remote.ini, the tests are
+// copied to the sub-directory "test-oop-extensions", which we detect here, and
+// use to select our configuration.
+if (gTestPath.includes("test-oop-extensions")) {
+  SpecialPowers.pushPrefEnv({set: [
+    ["dom.ipc.processCount", 1],
+    ["extensions.webextensions.remote", true],
+  ]});
+}
 
 // Bug 1239884: Our tests occasionally hit a long GC pause at unpredictable
 // times in debug builds, which results in intermittent timeouts. Until we have
@@ -84,6 +96,44 @@ function promisePopupHidden(popup) {
   });
 }
 
+function promiseContentDimensions(browser) {
+  return ContentTask.spawn(browser, null, function* () {
+    function copyProps(obj, props) {
+      let res = {};
+      for (let prop of props) {
+        res[prop] = obj[prop];
+      }
+      return res;
+    }
+
+    return {
+      window: copyProps(content,
+                        ["innerWidth", "innerHeight", "outerWidth", "outerHeight",
+                         "scrollX", "scrollY", "scrollMaxX", "scrollMaxY"]),
+      body: copyProps(content.document.body,
+                      ["clientWidth", "clientHeight", "scrollWidth", "scrollHeight"]),
+      root: copyProps(content.document.documentElement,
+                      ["clientWidth", "clientHeight", "scrollWidth", "scrollHeight"]),
+
+      isStandards: content.document.compatMode !== "BackCompat",
+    };
+  });
+}
+
+function* awaitPopupResize(browser) {
+  return BrowserTestUtils.waitForEvent(browser, "WebExtPopupResized",
+                                       event => event.detail === "delayed");
+}
+
+function alterContent(browser, task, arg = null) {
+  return Promise.all([
+    ContentTask.spawn(browser, arg, task),
+    awaitPopupResize(browser),
+  ]).then(() => {
+    return promiseContentDimensions(browser);
+  });
+}
+
 function getPanelForNode(node) {
   while (node.localName != "panel") {
     node = node.parentNode;
@@ -91,21 +141,22 @@ function getPanelForNode(node) {
   return node;
 }
 
-var awaitExtensionPanel = Task.async(function* (extension, win = window, filename = "popup.html") {
-  let {target} = yield BrowserTestUtils.waitForEvent(win.document, "load", true, (event) => {
-    return event.target.location && event.target.location.href.endsWith(filename);
-  });
-
-  let browser = target.defaultView
-                      .QueryInterface(Ci.nsIInterfaceRequestor).getInterface(Ci.nsIDocShell)
-                      .chromeEventHandler;
-
-  if (browser.matches(".webextension-preload-browser")) {
-    let event = yield BrowserTestUtils.waitForEvent(browser, "SwapDocShells");
-    browser = event.detail;
+var awaitBrowserLoaded = browser => ContentTask.spawn(browser, null, () => {
+  if (content.document.readyState !== "complete") {
+    return ContentTaskUtils.waitForEvent(this, "load", true).then(() => {});
   }
+});
 
-  yield promisePopupShown(getPanelForNode(browser));
+var awaitExtensionPanel = Task.async(function* (extension, win = window, awaitLoad = true) {
+  let {originalTarget: browser} = yield BrowserTestUtils.waitForEvent(
+    win.document, "WebExtPopupLoaded", true,
+    event => event.detail.extension.id === extension.id);
+
+  yield Promise.all([
+    promisePopupShown(getPanelForNode(browser)),
+
+    awaitLoad && awaitBrowserLoaded(browser, awaitLoad),
+  ]);
 
   return browser;
 });

@@ -36,6 +36,10 @@
 #include "nsLayoutUtils.h"
 #include "nsCoord.h"
 
+// Ensure the binding function declarations in nsStyleContext.h matches
+// those in ServoBindings.h.
+#include "mozilla/ServoBindings.h"
+
 using namespace mozilla;
 
 //----------------------------------------------------------------------
@@ -468,8 +472,24 @@ const void* nsStyleContext::StyleData(nsStyleStructID aSID)
       mCachedInheritedData.mStyleStructs[aSID] = const_cast<void*>(newData);
     }
   } else {
-    // The Servo-backed StyleContextSource owns the struct.
     newData = StyleStructFromServoComputedValues(aSID);
+
+    // perform any remaining main thread work on the struct
+    switch (aSID) {
+#define STYLE_STRUCT(name_, checkdata_cb_)                                    \
+      case eStyleStruct_##name_: {                                            \
+        auto data = static_cast<const nsStyle##name_*>(newData);              \
+        const_cast<nsStyle##name_*>(data)->FinishStyle(PresContext());        \
+        break;                                                                \
+      }
+#include "nsStyleStructList.h"
+#undef STYLE_STRUCT
+      default:
+        MOZ_ASSERT_UNREACHABLE("unexpected nsStyleStructID value");
+        break;
+    }
+
+    // The Servo-backed StyleContextSource owns the struct.
     AddStyleBit(nsCachedStyleData::GetBitForSID(aSID));
 
     // XXXbholley: Unconditionally caching reset structs here defeats the memory
@@ -1281,7 +1301,7 @@ nsStyleContext::CalcStyleDifference(nsStyleContext* aNewContext,
 class MOZ_STACK_CLASS FakeStyleContext
 {
 public:
-  explicit FakeStyleContext(ServoComputedValues* aComputedValues)
+  explicit FakeStyleContext(const ServoComputedValues* aComputedValues)
     : mComputedValues(aComputedValues) {}
 
   mozilla::NonOwningStyleContextSource StyleSource() const {
@@ -1302,11 +1322,11 @@ public:
   #undef STYLE_STRUCT
 
 private:
-  ServoComputedValues* MOZ_NON_OWNING_REF mComputedValues;
+  const ServoComputedValues* MOZ_NON_OWNING_REF mComputedValues;
 };
 
 nsChangeHint
-nsStyleContext::CalcStyleDifference(ServoComputedValues* aNewComputedValues,
+nsStyleContext::CalcStyleDifference(const ServoComputedValues* aNewComputedValues,
                                     nsChangeHint aParentHintsNotHandledForDescendants,
                                     uint32_t* aEqualStructs,
                                     uint32_t* aSamePointerStructs)

@@ -106,22 +106,16 @@ class Windows(BaseLib):
                 # Retrieve window type to determine the type of chrome window
                 if handle != self.marionette.current_chrome_window_handle:
                     self.switch_to(handle)
-
-                window_type = Wait(self.marionette).until(
-                    lambda mn: mn.get_window_type(),
-                    message='Cannot get window type for chrome window handle "%s"' % handle
-                )
-
+                window_type = self.marionette.get_window_type()
             finally:
                 # Ensure to switch back to the original window
                 if handle != current_handle:
                     self.switch_to(current_handle)
 
             if window_type in self.windows_map:
-                window = self.windows_map[window_type](lambda: self.marionette, handle)
+                window = self.windows_map[window_type](self.marionette, handle)
             else:
-                raise errors.UnknownWindowError('Unknown window type "%s" for handle: "%s"' %
-                                                (window_type, handle))
+                window = BaseWindow(self.marionette, handle)
 
             if expected_class is not None and type(window) is not expected_class:
                 raise errors.UnexpectedWindowTypeError('Expected window "%s" but got "%s"' %
@@ -219,11 +213,12 @@ class BaseWindow(BaseLib):
     dtds = []
     properties = []
 
-    def __init__(self, marionette_getter, window_handle):
-        BaseLib.__init__(self, marionette_getter)
-        self._l10n = L10n(self.get_marionette)
-        self._prefs = Preferences(self.get_marionette)
-        self._windows = Windows(self.get_marionette)
+    def __init__(self, marionette, window_handle):
+        super(BaseWindow, self).__init__(marionette)
+
+        self._l10n = L10n(self.marionette)
+        self._prefs = Preferences(self.marionette)
+        self._windows = Windows(self.marionette)
 
         if window_handle not in self.marionette.chrome_window_handles:
             raise errors.UnknownWindowError('Window with handle "%s" does not exist' %

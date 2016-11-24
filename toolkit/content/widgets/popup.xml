@@ -246,6 +246,12 @@
       </xul:arrowscrollbox>
     </content>
 
+    <implementation>
+      <field name="scrollBox" readonly="true">
+        document.getAnonymousElementByAttribute(this, "class", "popup-internal-box");
+      </field>
+    </implementation>
+
     <handlers>
       <handler event="popupshowing" phase="target">
         <![CDATA[
@@ -281,7 +287,7 @@
             let tmp = {};
             Components.utils.import("resource://gre/modules/WindowDraggingUtils.jsm", tmp);
             let draghandle = new tmp.WindowDraggingElement(this);
-            draghandle.mouseDownCheck = function () {
+            draghandle.mouseDownCheck = function() {
               return this._dragBindingAlive;
             }
           } catch (e) {}
@@ -570,7 +576,6 @@
     <handlers>
       <handler event="mouseover"><![CDATA[
         var rel = event.relatedTarget;
-        //dump("ENTERING " + (rel ? rel.localName : "null") + "\n");
         if (!rel)
           return;
 
@@ -588,7 +593,6 @@
 
       <handler event="mouseout"><![CDATA[
         var rel = event.relatedTarget;
-        //dump("LEAVING " + (rel ? rel.localName : "null") + "\n");
 
         // relatedTarget is null when the titletip is first shown: a mouseout event fires
         // because the mouse is exiting the main window and entering the titletip "window".
@@ -630,9 +634,9 @@
 
   <binding id="popup-scrollbars" extends="chrome://global/content/bindings/popup.xml#popup">
     <content>
-      <xul:hbox class="popup-internal-box" flex="1" orient="vertical" style="overflow: auto;">
+      <xul:scrollbox class="popup-internal-box" flex="1" orient="vertical" style="overflow: auto;">
         <children/>
-      </xul:hbox>
+      </xul:scrollbox>
     </content>
   </binding>
 

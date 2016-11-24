@@ -4,15 +4,15 @@
 
 from urlparse import urlparse
 
+from firefox_puppeteer import PuppeteerMixin
+from marionette import MarionetteTestCase
 from marionette_driver import expected, Wait
 
-from firefox_ui_harness.testcases import FirefoxTestCase
 
-
-class TestNoCertificate(FirefoxTestCase):
+class TestNoCertificate(PuppeteerMixin, MarionetteTestCase):
 
     def setUp(self):
-        FirefoxTestCase.setUp(self)
+        super(TestNoCertificate, self).setUp()
 
         self.locationbar = self.browser.navbar.locationbar
         self.identity_popup = self.locationbar.identity_popup
@@ -23,9 +23,9 @@ class TestNoCertificate(FirefoxTestCase):
         try:
             self.browser.switch_to()
             self.identity_popup.close(force=True)
-            self.windows.close_all([self.browser])
+            self.puppeteer.windows.close_all([self.browser])
         finally:
-            FirefoxTestCase.tearDown(self)
+            super(TestNoCertificate, self).tearDown()
 
     def test_no_certificate(self):
         with self.marionette.using_context('content'):

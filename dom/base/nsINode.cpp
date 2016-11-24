@@ -153,6 +153,7 @@ nsINode::~nsINode()
   MOZ_ASSERT(!HasSlots(), "nsNodeUtils::LastRelease was not called?");
   MOZ_ASSERT(mSubtreeRoot == this, "Didn't restore state properly?");
 #ifdef MOZ_STYLO
+  NS_ASSERTION(!HasServoData(), "expected ServoNodeData to be cleared earlier");
   ClearServoData();
 #endif
 }
@@ -478,14 +479,6 @@ nsINode::GetParentNode(nsIDOMNode** aParentNode)
   nsINode *parent = GetParentNode();
 
   return parent ? CallQueryInterface(parent, aParentNode) : NS_OK;
-}
-
-nsresult
-nsINode::GetParentElement(nsIDOMElement** aParentElement)
-{
-  *aParentElement = nullptr;
-  nsINode* parent = GetParentElement();
-  return parent ? CallQueryInterface(parent, aParentElement) : NS_OK;
 }
 
 nsresult
@@ -1242,7 +1235,7 @@ nsINode::RemoveEventListener(const nsAString& aType,
 NS_IMPL_REMOVE_SYSTEM_EVENT_LISTENER(nsINode)
 
 nsresult
-nsINode::PreHandleEvent(EventChainPreVisitor& aVisitor)
+nsINode::GetEventTargetParent(EventChainPreVisitor& aVisitor)
 {
   // This is only here so that we can use the NS_DECL_NSIDOMTARGET macro
   NS_ABORT();
@@ -1886,7 +1879,8 @@ nsINode::Prepend(const Sequence<OwningNodeOrString>& aNodes,
     return;
   }
 
-  InsertBefore(*node, mFirstChild, aRv);
+  nsCOMPtr<nsINode> refNode = mFirstChild;
+  InsertBefore(*node, refNode, aRv);
 }
 
 void
@@ -2519,49 +2513,6 @@ nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
   return result;
 }
 
-nsresult
-nsINode::ReplaceOrInsertBefore(bool aReplace, nsIDOMNode *aNewChild,
-                               nsIDOMNode *aRefChild, nsIDOMNode **aReturn)
-{
-  nsCOMPtr<nsINode> newChild = do_QueryInterface(aNewChild);
-  if (!newChild) {
-    return NS_ERROR_NULL_POINTER;
-  }
-
-  if (aReplace && !aRefChild) {
-    return NS_ERROR_NULL_POINTER;
-  }
-
-  nsCOMPtr<nsINode> refChild = do_QueryInterface(aRefChild);
-  if (aRefChild && !refChild) {
-    return NS_NOINTERFACE;
-  }
-
-  ErrorResult rv;
-  nsINode* result = ReplaceOrInsertBefore(aReplace, newChild, refChild, rv);
-  if (result) {
-    NS_ADDREF(*aReturn = result->AsDOMNode());
-  }
-  return rv.StealNSResult();
-}
-
-nsresult
-nsINode::CompareDocumentPosition(nsIDOMNode* aOther, uint16_t* aReturn)
-{
-  nsCOMPtr<nsINode> other = do_QueryInterface(aOther);
-  NS_ENSURE_ARG(other);
-  *aReturn = CompareDocumentPosition(*other);
-  return NS_OK;
-}
-
-nsresult
-nsINode::IsEqualNode(nsIDOMNode* aOther, bool* aReturn)
-{
-  nsCOMPtr<nsINode> other = do_QueryInterface(aOther);
-  *aReturn = IsEqualNode(other);
-  return NS_OK;
-}
-
 void
 nsINode::BindObject(nsISupports* aObject)
 {
@@ -2685,14 +2636,6 @@ nsINode::Contains(const nsINode* aOther) const
   }
 
   return nsContentUtils::ContentIsDescendantOf(other, this);
-}
-
-nsresult
-nsINode::Contains(nsIDOMNode* aOther, bool* aReturn)
-{
-  nsCOMPtr<nsINode> node = do_QueryInterface(aOther);
-  *aReturn = Contains(node);
-  return NS_OK;
 }
 
 uint32_t
@@ -2949,27 +2892,6 @@ nsINode::QuerySelectorAll(const nsAString& aSelector, ErrorResult& aResult)
   }
 
   return contentList.forget();
-}
-
-nsresult
-nsINode::QuerySelector(const nsAString& aSelector, nsIDOMElement **aReturn)
-{
-  ErrorResult rv;
-  Element* result = nsINode::QuerySelector(aSelector, rv);
-  if (rv.Failed()) {
-    return rv.StealNSResult();
-  }
-  nsCOMPtr<nsIDOMElement> elt = do_QueryInterface(result);
-  elt.forget(aReturn);
-  return NS_OK;
-}
-
-nsresult
-nsINode::QuerySelectorAll(const nsAString& aSelector, nsIDOMNodeList **aReturn)
-{
-  ErrorResult rv;
-  *aReturn = nsINode::QuerySelectorAll(aSelector, rv).take();
-  return rv.StealNSResult();
 }
 
 Element*

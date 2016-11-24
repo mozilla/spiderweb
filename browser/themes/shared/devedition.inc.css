@@ -184,7 +184,6 @@ toolbar[brighttext] #downloads-indicator-counter {
 
 #TabsToolbar {
   text-shadow: none !important;
-  color: var(--chrome-color) !important; /* Make sure that the brighttext attribute is added */
 }
 
 /* URL bar and search bar*/
@@ -212,6 +211,14 @@ window:not([chromehidden~="toolbar"]) #urlbar-wrapper {
   overflow: -moz-hidden-unscrollable;
   clip-path: none;
   margin-inline-start: 0;
+}
+
+:root[devtoolstheme="dark"] #urlbar-zoom-button:hover {
+  background-color: rgba(255,255,255,.2);
+}
+
+:root[devtoolstheme="dark"] #urlbar-zoom-button:hover:active {
+  background-color: rgba(255,255,255,.3);
 }
 
 /* Nav bar specific stuff */
@@ -289,7 +296,7 @@ window:not([chromehidden~="toolbar"]) #urlbar-wrapper {
 
 .tab-icon-sound[soundplaying],
 .tab-icon-sound[muted] {
-  filter: url(chrome://browser/skin/filters.svg#fill) !important; /* removes drop-shadow filter */
+  filter: url(chrome://global/skin/filters.svg#fill) !important; /* removes drop-shadow filter */
 }
 
 /* Don't need space for the tab curves (66px - 30px) */

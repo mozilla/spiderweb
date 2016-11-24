@@ -200,13 +200,22 @@ TableUpdateV4::NewRemovalIndices(const uint32_t* aIndices, size_t aNumOfIndices)
   }
 }
 
-HashStore::HashStore(const nsACString& aTableName, nsIFile* aRootStoreDir)
+void
+TableUpdateV4::NewChecksum(const std::string& aChecksum)
+{
+  mChecksum.Assign(aChecksum.data(), aChecksum.size());
+}
+
+HashStore::HashStore(const nsACString& aTableName,
+                     const nsACString& aProvider,
+                     nsIFile* aRootStoreDir)
   : mTableName(aTableName)
   , mInUpdate(false)
   , mFileSize(0)
 {
   nsresult rv = Classifier::GetPrivateStoreDirectory(aRootStoreDir,
                                                      aTableName,
+                                                     aProvider,
                                                      getter_AddRefs(mStoreDirectory));
   if (NS_FAILED(rv)) {
     LOG(("Failed to get private store directory for %s", mTableName.get()));

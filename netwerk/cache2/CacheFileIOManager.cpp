@@ -573,7 +573,7 @@ public:
 
     DebugOnly<nsresult> rv;
     rv = CacheFileIOManager::gInstance->mIOThread->Dispatch(
-      this, CacheIOThread::CLOSE);
+      this, CacheIOThread::WRITE); // When writes and closing of handles is done
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
     PRIntervalTime const waitTime = PR_MillisecondsToInterval(1000);
@@ -965,12 +965,12 @@ protected:
 
 class InitIndexEntryEvent : public Runnable {
 public:
-  InitIndexEntryEvent(CacheFileHandle *aHandle, uint32_t aAppId,
-                      bool aAnonymous, bool aInIsolatedMozBrowser, bool aPinning)
+  InitIndexEntryEvent(CacheFileHandle *aHandle,
+                      OriginAttrsHash aOriginAttrsHash, bool aAnonymous,
+                      bool aPinning)
     : mHandle(aHandle)
-    , mAppId(aAppId)
+    , mOriginAttrsHash(aOriginAttrsHash)
     , mAnonymous(aAnonymous)
-    , mInIsolatedMozBrowser(aInIsolatedMozBrowser)
     , mPinning(aPinning)
   {
     MOZ_COUNT_CTOR(InitIndexEntryEvent);
@@ -989,7 +989,8 @@ public:
       return NS_OK;
     }
 
-    CacheIndex::InitEntry(mHandle->Hash(), mAppId, mAnonymous, mInIsolatedMozBrowser, mPinning);
+    CacheIndex::InitEntry(mHandle->Hash(), mOriginAttrsHash, mAnonymous,
+                          mPinning);
 
     // We cannot set the filesize before we init the entry. If we're opening
     // an existing entry file, frecency and expiration time will be set after
@@ -1003,10 +1004,9 @@ public:
 
 protected:
   RefPtr<CacheFileHandle> mHandle;
-  uint32_t                  mAppId;
-  bool                      mAnonymous;
-  bool                      mInIsolatedMozBrowser;
-  bool                      mPinning;
+  OriginAttrsHash         mOriginAttrsHash;
+  bool                    mAnonymous;
+  bool                    mPinning;
 };
 
 class UpdateIndexEntryEvent : public Runnable {
@@ -1926,7 +1926,9 @@ CacheFileIOManager::Write(CacheFileHandle *aHandle, int64_t aOffset,
 
   RefPtr<WriteEvent> ev = new WriteEvent(aHandle, aOffset, aBuf, aCount,
                                            aValidate, aTruncate, aCallback);
-  rv = ioMan->mIOThread->Dispatch(ev, CacheIOThread::WRITE);
+  rv = ioMan->mIOThread->Dispatch(ev, aHandle->mPriority
+                                  ? CacheIOThread::WRITE_PRIORITY
+                                  : CacheIOThread::WRITE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -2288,7 +2290,9 @@ CacheFileIOManager::ReleaseNSPRHandle(CacheFileHandle *aHandle)
   }
 
   RefPtr<ReleaseNSPRHandleEvent> ev = new ReleaseNSPRHandleEvent(aHandle);
-  rv = ioMan->mIOThread->Dispatch(ev, CacheIOThread::CLOSE);
+  rv = ioMan->mIOThread->Dispatch(ev, aHandle->mPriority
+                                  ? CacheIOThread::WRITE_PRIORITY
+                                  : CacheIOThread::WRITE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -2370,7 +2374,9 @@ CacheFileIOManager::TruncateSeekSetEOF(CacheFileHandle *aHandle,
   RefPtr<TruncateSeekSetEOFEvent> ev = new TruncateSeekSetEOFEvent(
                                            aHandle, aTruncatePos, aEOFPos,
                                            aCallback);
-  rv = ioMan->mIOThread->Dispatch(ev, CacheIOThread::WRITE);
+  rv = ioMan->mIOThread->Dispatch(ev, aHandle->mPriority
+                                  ? CacheIOThread::WRITE_PRIORITY
+                                  : CacheIOThread::WRITE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -2599,7 +2605,9 @@ CacheFileIOManager::RenameFile(CacheFileHandle *aHandle,
 
   RefPtr<RenameFileEvent> ev = new RenameFileEvent(aHandle, aNewName,
                                                      aCallback);
-  rv = ioMan->mIOThread->Dispatch(ev, CacheIOThread::WRITE);
+  rv = ioMan->mIOThread->Dispatch(ev, aHandle->mPriority
+                                  ? CacheIOThread::WRITE_PRIORITY
+                                  : CacheIOThread::WRITE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -3481,14 +3489,13 @@ CacheFileIOManager::FindTrashDirToRemove()
 // static
 nsresult
 CacheFileIOManager::InitIndexEntry(CacheFileHandle *aHandle,
-                                   uint32_t         aAppId,
+                                   OriginAttrsHash  aOriginAttrsHash,
                                    bool             aAnonymous,
-                                   bool             aInIsolatedMozBrowser,
                                    bool             aPinning)
 {
-  LOG(("CacheFileIOManager::InitIndexEntry() [handle=%p, appId=%u, anonymous=%d"
-       ", inIsolatedMozBrowser=%d, pinned=%d]", aHandle, aAppId, aAnonymous,
-       aInIsolatedMozBrowser, aPinning));
+  LOG(("CacheFileIOManager::InitIndexEntry() [handle=%p, originAttrsHash=%llx, "
+       "anonymous=%d, pinning=%d]", aHandle, aOriginAttrsHash, aAnonymous,
+       aPinning));
 
   nsresult rv;
   RefPtr<CacheFileIOManager> ioMan = gInstance;
@@ -3502,8 +3509,10 @@ CacheFileIOManager::InitIndexEntry(CacheFileHandle *aHandle,
   }
 
   RefPtr<InitIndexEntryEvent> ev =
-    new InitIndexEntryEvent(aHandle, aAppId, aAnonymous, aInIsolatedMozBrowser, aPinning);
-  rv = ioMan->mIOThread->Dispatch(ev, CacheIOThread::WRITE);
+    new InitIndexEntryEvent(aHandle, aOriginAttrsHash, aAnonymous, aPinning);
+  rv = ioMan->mIOThread->Dispatch(ev, aHandle->mPriority
+                                  ? CacheIOThread::WRITE_PRIORITY
+                                  : CacheIOThread::WRITE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -3533,7 +3542,9 @@ CacheFileIOManager::UpdateIndexEntry(CacheFileHandle *aHandle,
 
   RefPtr<UpdateIndexEntryEvent> ev =
     new UpdateIndexEntryEvent(aHandle, aFrecency, aExpirationTime);
-  rv = ioMan->mIOThread->Dispatch(ev, CacheIOThread::WRITE);
+  rv = ioMan->mIOThread->Dispatch(ev, aHandle->mPriority
+                                  ? CacheIOThread::WRITE_PRIORITY
+                                  : CacheIOThread::WRITE);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;

@@ -435,13 +435,12 @@ WebContentConverterRegistrar.prototype = {
 
       callback(aNotification, aButtonInfo) {
           let protocol = aButtonInfo.protocolInfo.protocol;
-          let uri      = aButtonInfo.protocolInfo.uri;
           let name     = aButtonInfo.protocolInfo.name;
 
           let handler = Cc["@mozilla.org/uriloader/web-handler-app;1"].
                         createInstance(Ci.nsIWebHandlerApp);
           handler.name = name;
-          handler.uriTemplate = uri;
+          handler.uriTemplate = aButtonInfo.protocolInfo.uri;
 
           let eps = Cc["@mozilla.org/uriloader/external-protocol-service;1"].
                     getService(Ci.nsIExternalProtocolService);
@@ -834,7 +833,7 @@ WebContentConverterRegistrar.prototype = {
       autoBranch = ps.getBranch(PREF_CONTENTHANDLERS_AUTO);
     } catch (e) {
       // No auto branch yet, that's fine
-      //LOG("WCCR.init: There is no auto branch, benign");
+      // LOG("WCCR.init: There is no auto branch, benign");
     }
 
     if (autoBranch) {
@@ -920,7 +919,7 @@ WebContentConverterRegistrarContent.prototype = {
       let branch = ps.getBranch(PREF_CONTENTHANDLERS_BRANCH + num + ".");
       try {
         this._registerContentHandlerHavingBranch(branch);
-      } catch(ex) {
+      } catch (ex) {
         // do nothing, the next branch might have values
       }
     }

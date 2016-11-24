@@ -52,7 +52,7 @@ addEventListener("MozDOMPointerLock:Exited", function(aEvent) {
 });
 
 
-addMessageListener("Browser:HideSessionRestoreButton", function (message) {
+addMessageListener("Browser:HideSessionRestoreButton", function(message) {
   // Hide session restore button on about:home
   let doc = content.document;
   let container;
@@ -272,7 +272,6 @@ var AboutReaderListener = {
   receiveMessage: function(message) {
     switch (message.name) {
       case "Reader:ToggleReaderMode":
-        let url = content.document.location.href;
         if (!this.isAboutReader) {
           this._articlePromise = ReaderMode.parseDocument(content.document).catch(Cu.reportError);
           ReaderMode.enterReaderMode(docShell, content);
@@ -402,18 +401,18 @@ var ContentSearchMediator = {
     "about:newtab",
   ]),
 
-  init: function (chromeGlobal) {
+  init: function(chromeGlobal) {
     chromeGlobal.addEventListener("ContentSearchClient", this, true, true);
     addMessageListener("ContentSearch", this);
   },
 
-  handleEvent: function (event) {
+  handleEvent: function(event) {
     if (this._contentWhitelisted) {
       this._sendMsg(event.detail.type, event.detail.data);
     }
   },
 
-  receiveMessage: function (msg) {
+  receiveMessage: function(msg) {
     if (msg.data.type == "AddToWhitelist") {
       for (let uri of msg.data.data) {
         this.whitelist.add(uri);
@@ -430,14 +429,14 @@ var ContentSearchMediator = {
     return this.whitelist.has(content.document.documentURI);
   },
 
-  _sendMsg: function (type, data=null) {
+  _sendMsg: function(type, data = null) {
     sendAsyncMessage("ContentSearch", {
       type: type,
       data: data,
     });
   },
 
-  _fireEvent: function (type, data=null) {
+  _fireEvent: function(type, data = null) {
     let event = Cu.cloneInto({
       detail: {
         type: type,
@@ -492,7 +491,7 @@ var PageStyleHandler = {
     this.sendStyleSheetInfo();
   },
 
-  _stylesheetSwitchAll: function (frameset, title) {
+  _stylesheetSwitchAll: function(frameset, title) {
     if (!title || this._stylesheetInFrame(frameset, title)) {
       this._stylesheetSwitchFrame(frameset, title);
     }
@@ -503,7 +502,7 @@ var PageStyleHandler = {
     }
   },
 
-  _stylesheetSwitchFrame: function (frame, title) {
+  _stylesheetSwitchFrame: function(frame, title) {
     var docStyleSheets = frame.document.styleSheets;
 
     for (let i = 0; i < docStyleSheets.length; ++i) {
@@ -516,7 +515,7 @@ var PageStyleHandler = {
     }
   },
 
-  _stylesheetInFrame: function (frame, title) {
+  _stylesheetInFrame: function(frame, title) {
     return Array.some(frame.document.styleSheets, (styleSheet) => styleSheet.title == title);
   },
 
@@ -622,6 +621,12 @@ var WebBrowserChrome = {
 
     return true;
   },
+
+  // Try to reload the currently active or currently loading page in a new process.
+  reloadInFreshProcess: function(aDocShell, aURI, aReferrer) {
+    E10SUtils.redirectLoad(aDocShell, aURI, aReferrer, true);
+    return true;
+  }
 };
 
 if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {

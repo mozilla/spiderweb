@@ -12,7 +12,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/RefPtr.h"             // for already_AddRefed
 #include "mozilla/ipc/SharedMemory.h"   // for SharedMemory, etc
-#include "mozilla/layers/AsyncTransactionTracker.h" // for AsyncTransactionTrackerHolder
 #include "mozilla/layers/CanvasClient.h"
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/CompositorTypes.h"
@@ -22,6 +21,7 @@
 #include "nsIObserver.h"
 #include "nsRegion.h"                   // for nsIntRegion
 #include "mozilla/gfx/Rect.h"
+#include "mozilla/ReentrantMonitor.h"   // for ReentrantMonitor, etc
 
 class MessageLoop;
 
@@ -37,7 +37,6 @@ class Shmem;
 namespace layers {
 
 class AsyncCanvasRenderer;
-class AsyncTransactionTracker;
 class ImageClient;
 class ImageContainer;
 class ImageContainerChild;
@@ -190,10 +189,10 @@ public:
   virtual bool
   DeallocPImageContainerChild(PImageContainerChild* actor) override;
 
-  virtual bool
+  virtual mozilla::ipc::IPCResult
   RecvParentAsyncMessages(InfallibleTArray<AsyncParentMessageData>&& aMessages) override;
 
-  virtual bool
+  virtual mozilla::ipc::IPCResult
   RecvDidComposite(InfallibleTArray<ImageCompositeNotification>&& aNotifications) override;
 
   // Create an ImageClient from any thread.
@@ -257,11 +256,10 @@ private:
   void FlushAllImagesSync(
     SynchronousTask* aTask,
     ImageClient* aClient,
-    ImageContainer* aContainer,
-    RefPtr<AsyncTransactionWaiter> aWaiter);
+    ImageContainer* aContainer);
 
   void ProxyAllocShmemNow(SynchronousTask* aTask, AllocShmemParams* aParams);
-  void ProxyDeallocShmemNow(SynchronousTask* aTask, Shmem* aShmem);
+  void ProxyDeallocShmemNow(SynchronousTask* aTask, Shmem* aShmem, bool* aResult);
 
 public:
   // CompositableForwarder
@@ -279,11 +277,6 @@ public:
   virtual void UseComponentAlphaTextures(CompositableClient* aCompositable,
                                          TextureClient* aClientOnBlack,
                                          TextureClient* aClientOnWhite) override;
-#ifdef MOZ_WIDGET_GONK
-  virtual void UseOverlaySource(CompositableClient* aCompositable,
-                                const OverlaySource& aOverlay,
-                                const nsIntRect& aPictureRect) override;
-#endif
 
   void Destroy(CompositableChild* aCompositable) override;
 
@@ -299,16 +292,6 @@ public:
    */
   void NotifyNotUsed(uint64_t aTextureId, uint64_t aFwdTransactionId);
 
-  void DeliverFence(uint64_t aTextureId, FenceHandle& aReleaseFenceHandle);
-
-  void HoldUntilFenceHandleDelivery(TextureClient* aClient, uint64_t aTransactionId);
-
-  void DeliverFenceToNonRecycle(uint64_t aTextureId, FenceHandle& aReleaseFenceHandle);
-
-  void NotifyNotUsedToNonRecycle(uint64_t aTextureId, uint64_t aTransactionId);
-
-  void CancelWaitFenceHandle(TextureClient* aClient);
-
   virtual void CancelWaitForRecycle(uint64_t aTextureId) override;
 
   virtual bool DestroyInTransaction(PTextureChild* aTexture, bool synchronously) override;
@@ -316,10 +299,6 @@ public:
 
   virtual void RemoveTextureFromCompositable(CompositableClient* aCompositable,
                                              TextureClient* aTexture) override;
-
-  virtual void RemoveTextureFromCompositableAsync(AsyncTransactionTracker* aAsyncTransactionTracker,
-                                                  CompositableClient* aCompositable,
-                                                  TextureClient* aTexture) override;
 
   virtual void UseTiledLayerBuffer(CompositableClient* aCompositable,
                                    const SurfaceDescriptorTiles& aTileLayerDescriptor) override
@@ -354,7 +333,7 @@ public:
    * If used outside the ImageBridgeChild thread, it will proxy a synchronous
    * call on the ImageBridgeChild thread.
    */
-  virtual void DeallocShmem(mozilla::ipc::Shmem& aShmem) override;
+  virtual bool DeallocShmem(mozilla::ipc::Shmem& aShmem) override;
 
   virtual PTextureChild* CreateTexture(const SurfaceDescriptor& aSharedData,
                                        LayersBackend aLayersBackend,
@@ -370,7 +349,7 @@ public:
     return InImageBridgeChildThread();
   }
 
-  virtual void FatalError(const char* const aName, const char* const aMsg) const override;
+  virtual void HandleFatalError(const char* aName, const char* aMsg) const override;
 
 protected:
   ImageBridgeChild();
@@ -413,13 +392,6 @@ private:
    * It defer calling of TextureClient recycle callback.
    */
   nsDataHashtable<nsUint64HashKey, RefPtr<TextureClient> > mTexturesWaitingRecycled;
-
-  AsyncTransactionTrackersHolder mTrackersHolder;
-
-#ifdef MOZ_WIDGET_GONK
-  Mutex mWaitingFenceHandleMutex;
-  nsDataHashtable<nsUint64HashKey, RefPtr<TextureClient> > mTexturesWaitingFenceHandle;
-#endif
 };
 
 } // namespace layers

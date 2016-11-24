@@ -59,6 +59,12 @@ HTMLObjectElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const
          nsGenericHTMLFormElement::IsInteractiveHTMLContent(aIgnoreTabindex);
 }
 
+void
+HTMLObjectElement::AsyncEventRunning(AsyncEventDispatcher* aEvent)
+{
+  nsImageLoadingContent::AsyncEventRunning(aEvent);
+}
+
 bool
 HTMLObjectElement::IsDoneAddingChildren()
 {
@@ -160,10 +166,6 @@ HTMLObjectElement::OnFocusBlurPlugin(Element* aElement, bool aFocus)
     nsCOMPtr<nsIObjectLoadingContent> olc = do_QueryInterface(aElement);
     bool hasRunningPlugin = false;
     if (olc) {
-      // nsIObjectLoadingContent::GetHasRunningPlugin() fails when
-      // nsContentUtils::IsCallerChrome() returns false (which it can do even
-      // when we're processing a trusted focus event).  We work around this by
-      // calling nsObjectLoadingContent::HasRunningPlugin() directly.
       hasRunningPlugin =
         static_cast<nsObjectLoadingContent*>(olc.get())->HasRunningPlugin();
     }
@@ -466,13 +468,13 @@ HTMLObjectElement::GetContentDocument(nsIDOMDocument **aContentDocument)
   NS_ENSURE_ARG_POINTER(aContentDocument);
 
   nsCOMPtr<nsIDOMDocument> domDoc =
-    do_QueryInterface(GetContentDocument(Some(nsContentUtils::SubjectPrincipal())));
+    do_QueryInterface(GetContentDocument(*nsContentUtils::SubjectPrincipal()));
   domDoc.forget(aContentDocument);
   return NS_OK;
 }
 
 nsPIDOMWindowOuter*
-HTMLObjectElement::GetContentWindow(const mozilla::Maybe<nsIPrincipal*>& aSubjectPrincipal)
+HTMLObjectElement::GetContentWindow(nsIPrincipal& aSubjectPrincipal)
 {
   nsIDocument* doc = GetContentDocument(aSubjectPrincipal);
   if (doc) {

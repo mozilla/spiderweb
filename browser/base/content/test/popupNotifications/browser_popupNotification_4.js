@@ -15,41 +15,41 @@ function test() {
 var tests = [
   // Popup Notifications main actions should catch exceptions from callbacks
   { id: "Test#1",
-    run: function () {
+    run: function() {
       this.testNotif = new ErrorNotification();
       showNotification(this.testNotif);
     },
-    onShown: function (popup) {
+    onShown: function(popup) {
       checkPopup(popup, this.testNotif);
       triggerMainCommand(popup);
     },
-    onHidden: function (popup) {
+    onHidden: function(popup) {
       ok(this.testNotif.mainActionClicked, "main action has been triggered");
     }
   },
   // Popup Notifications secondary actions should catch exceptions from callbacks
   { id: "Test#2",
-    run: function () {
+    run: function() {
       this.testNotif = new ErrorNotification();
       showNotification(this.testNotif);
     },
-    onShown: function (popup) {
+    onShown: function(popup) {
       checkPopup(popup, this.testNotif);
       triggerSecondaryCommand(popup, 0);
     },
-    onHidden: function (popup) {
+    onHidden: function(popup) {
       ok(this.testNotif.secondaryActionClicked, "secondary action has been triggered");
     }
   },
   // Existing popup notification shouldn't disappear when adding a dismissed notification
   { id: "Test#3",
-    run: function () {
+    run: function() {
       this.notifyObj1 = new BasicNotification(this.id);
       this.notifyObj1.id += "_1";
       this.notifyObj1.anchorID = "default-notification-icon";
       this.notification1 = showNotification(this.notifyObj1);
     },
-    onShown: function (popup) {
+    onShown: function(popup) {
       // Now show a dismissed notification, and check that it doesn't clobber
       // the showing one.
       this.notifyObj2 = new BasicNotification(this.id);
@@ -78,7 +78,7 @@ var tests = [
     run: function() {
       this.notifyObj = new BasicNotification(this.id);
       let normalCallback = this.notifyObj.options.eventCallback;
-      this.notifyObj.options.eventCallback = function (eventName) {
+      this.notifyObj.options.eventCallback = function(eventName) {
         if (eventName == "showing") {
           this.mainAction.label = "Alternate Label";
         }
@@ -103,7 +103,6 @@ var tests = [
       showNotification(notifyObj);
       let win = gBrowser.replaceTabWithWindow(gBrowser.selectedTab);
       whenDelayedStartupFinished(win, function() {
-        let [tab] = win.gBrowser.tabs;
         let anchor = win.document.getElementById("default-notification-icon");
         win.PopupNotifications._reshowNotifications(anchor);
         ok(win.PopupNotifications.panel.childNodes.length == 0,
@@ -118,10 +117,13 @@ var tests = [
   // Moving a tab to a new window should preserve swappable notifications.
   { id: "Test#6",
     run: function* () {
+      let originalBrowser = gBrowser.selectedBrowser;
+      let originalWindow = window;
+
       gBrowser.selectedTab = gBrowser.addTab("about:blank");
       let notifyObj = new BasicNotification(this.id);
       let originalCallback = notifyObj.options.eventCallback;
-      notifyObj.options.eventCallback = function (eventName) {
+      notifyObj.options.eventCallback = function(eventName) {
         originalCallback(eventName);
         return eventName == "swapping";
       };
@@ -129,11 +131,11 @@ var tests = [
       let notification = showNotification(notifyObj);
       let win = gBrowser.replaceTabWithWindow(gBrowser.selectedTab);
       yield whenDelayedStartupFinished(win);
-      let [tab] = win.gBrowser.tabs;
-      let anchor = win.document.getElementById("default-notification-icon");
 
       yield new Promise(resolve => {
-        notification.options.eventCallback = function (eventName) {
+        let callback = notification.options.eventCallback;
+        notification.options.eventCallback = function(eventName) {
+          callback(eventName);
           if (eventName == "shown") {
             resolve();
           }
@@ -144,39 +146,32 @@ var tests = [
 
       checkPopup(win.PopupNotifications.panel, notifyObj);
       ok(notifyObj.swappingCallbackTriggered, "the swapping callback was triggered");
-      win.close();
+      yield BrowserTestUtils.closeWindow(win);
+
+      // These are the same checks that PopupNotifications.jsm makes before it
+      // allows a notification to open. Do not go to the next test until we are
+      // sure that its attempt to display a notification will not fail.
+      yield BrowserTestUtils.waitForCondition(() => originalBrowser.docShellIsActive,
+                                              "The browser should be active");
+      let fm = Cc["@mozilla.org/focus-manager;1"].getService(Ci.nsIFocusManager);
+      yield BrowserTestUtils.waitForCondition(() => fm.activeWindow == originalWindow,
+                                              "The window should be active")
+
       goNext();
-    }
-  },
-  // the hideNotNow option
-  { id: "Test#7",
-    run: function () {
-      this.notifyObj = new BasicNotification(this.id);
-      this.notifyObj.options.hideNotNow = true;
-      this.notifyObj.mainAction.dismiss = true;
-      this.notification = showNotification(this.notifyObj);
-    },
-    onShown: function (popup) {
-      // checkPopup verifies that the Not Now item is hidden, and that no separator is added.
-      checkPopup(popup, this.notifyObj);
-      triggerMainCommand(popup);
-    },
-    onHidden: function (popup) {
-      this.notification.remove();
     }
   },
   // the main action callback can keep the notification.
   { id: "Test#8",
-    run: function () {
+    run: function() {
       this.notifyObj = new BasicNotification(this.id);
       this.notifyObj.mainAction.dismiss = true;
       this.notification = showNotification(this.notifyObj);
     },
-    onShown: function (popup) {
+    onShown: function(popup) {
       checkPopup(popup, this.notifyObj);
       triggerMainCommand(popup);
     },
-    onHidden: function (popup) {
+    onHidden: function(popup) {
       ok(this.notifyObj.dismissalCallbackTriggered, "dismissal callback was triggered");
       ok(!this.notifyObj.removedCallbackTriggered, "removed callback wasn't triggered");
       this.notification.remove();
@@ -184,16 +179,16 @@ var tests = [
   },
   // a secondary action callback can keep the notification.
   { id: "Test#9",
-    run: function () {
+    run: function() {
       this.notifyObj = new BasicNotification(this.id);
       this.notifyObj.secondaryActions[0].dismiss = true;
       this.notification = showNotification(this.notifyObj);
     },
-    onShown: function (popup) {
+    onShown: function(popup) {
       checkPopup(popup, this.notifyObj);
       triggerSecondaryCommand(popup, 0);
     },
-    onHidden: function (popup) {
+    onHidden: function(popup) {
       ok(this.notifyObj.dismissalCallbackTriggered, "dismissal callback was triggered");
       ok(!this.notifyObj.removedCallbackTriggered, "removed callback wasn't triggered");
       this.notification.remove();
@@ -204,7 +199,7 @@ var tests = [
     run: function() {
       let notifyObj = new BasicNotification(this.id);
       let originalCallback = notifyObj.options.eventCallback;
-      notifyObj.options.eventCallback = function (eventName) {
+      notifyObj.options.eventCallback = function(eventName) {
         originalCallback(eventName);
         return eventName == "showing";
       };
@@ -214,69 +209,6 @@ var tests = [
       ok(!notifyObj.shownCallbackTriggered, "the shown callback wasn't triggered");
       notification.remove();
       goNext();
-    }
-  },
-  // panel updates should fire the showing and shown callbacks again.
-  { id: "Test#11",
-    run: function() {
-      this.notifyObj = new BasicNotification(this.id);
-      this.notification = showNotification(this.notifyObj);
-    },
-    onShown: function (popup) {
-      checkPopup(popup, this.notifyObj);
-
-      this.notifyObj.showingCallbackTriggered = false;
-      this.notifyObj.shownCallbackTriggered = false;
-
-      // Force an update of the panel. This is typically called
-      // automatically when receiving 'activate' or 'TabSelect' events,
-      // but from a setTimeout, which is inconvenient for the test.
-      PopupNotifications._update();
-
-      checkPopup(popup, this.notifyObj);
-
-      this.notification.remove();
-    },
-    onHidden: function() { }
-  },
-  // A first dismissed notification shouldn't stop _update from showing a second notification
-  { id: "Test#12",
-    run: function () {
-      this.notifyObj1 = new BasicNotification(this.id);
-      this.notifyObj1.id += "_1";
-      this.notifyObj1.anchorID = "default-notification-icon";
-      this.notifyObj1.options.dismissed = true;
-      this.notification1 = showNotification(this.notifyObj1);
-
-      this.notifyObj2 = new BasicNotification(this.id);
-      this.notifyObj2.id += "_2";
-      this.notifyObj2.anchorID = "geo-notification-icon";
-      this.notifyObj2.options.dismissed = true;
-      this.notification2 = showNotification(this.notifyObj2);
-
-      this.notification2.dismissed = false;
-      PopupNotifications._update();
-    },
-    onShown: function (popup) {
-      checkPopup(popup, this.notifyObj2);
-      this.notification1.remove();
-      this.notification2.remove();
-    },
-    onHidden: function(popup) { }
-  },
-  // The anchor icon should be shown for notifications in background windows.
-  { id: "Test#13",
-    run: function() {
-      let notifyObj = new BasicNotification(this.id);
-      notifyObj.options.dismissed = true;
-      let win = gBrowser.replaceTabWithWindow(gBrowser.addTab("about:blank"));
-      whenDelayedStartupFinished(win, function() {
-        showNotification(notifyObj);
-        let anchor = document.getElementById("default-notification-icon");
-        is(anchor.getAttribute("showing"), "true", "the anchor is shown");
-        win.close();
-        goNext();
-      });
     }
   }
 ];

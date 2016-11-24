@@ -200,7 +200,6 @@ public:
 
 BasicCompositor::BasicCompositor(CompositorBridgeParent* aParent, widget::CompositorWidget* aWidget)
   : Compositor(aWidget, aParent)
-  , mDidExternalComposition(false)
   , mIsPendingEndRemoteDrawing(false)
 {
   MOZ_COUNT_CTOR(BasicCompositor);
@@ -571,7 +570,7 @@ BasicCompositor::DrawQuad(const gfx::Rect& aRect,
     newTransform = aTransform.As2D();
   } else {
     // Create a temporary surface for the transform.
-    dest = gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(RoundedOut(aRect).Size(), SurfaceFormat::B8G8R8A8);
+    dest = Factory::CreateDrawTarget(gfxVars::ContentBackend(), RoundedOut(aRect).Size(), SurfaceFormat::B8G8R8A8);
     if (!dest) {
       return;
     }
@@ -784,16 +783,9 @@ BasicCompositor::BeginFrame(const nsIntRegion& aInvalidRegion,
   IntRect rect = IntRect(0, 0, intRect.width, intRect.height);
 
   LayoutDeviceIntRegion invalidRegionSafe;
-  if (mDidExternalComposition) {
-    // We do not know rendered region during external composition, just redraw
-    // whole widget.
-    invalidRegionSafe = intRect;
-    mDidExternalComposition = false;
-  } else {
-    // Sometimes the invalid region is larger than we want to draw.
-    invalidRegionSafe.And(
+  // Sometimes the invalid region is larger than we want to draw.
+  invalidRegionSafe.And(
       LayoutDeviceIntRegion::FromUnknownRegion(aInvalidRegion), intRect);
-  }
 
   mInvalidRegion = invalidRegionSafe;
   mInvalidRect = mInvalidRegion.GetBounds();
@@ -971,16 +963,6 @@ void
 BasicCompositor::FinishPendingComposite()
 {
   TryToEndRemoteDrawing(/* aForceToEnd */ true);
-}
-
-void
-BasicCompositor::EndFrameForExternalComposition(const gfx::Matrix& aTransform)
-{
-  MOZ_ASSERT(!mTarget);
-  MOZ_ASSERT(!mDrawTarget);
-  MOZ_ASSERT(!mRenderTarget);
-
-  mDidExternalComposition = true;
 }
 
 BasicCompositor*

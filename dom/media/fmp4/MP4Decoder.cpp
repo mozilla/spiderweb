@@ -31,7 +31,6 @@ namespace mozilla {
 MP4Decoder::MP4Decoder(MediaDecoderOwner* aOwner)
   : MediaDecoder(aOwner)
 {
-  mDormantSupported = Preferences::GetBool("media.decoder.heuristic.dormant.enabled", false);
 }
 
 MediaDecoderStateMachine* MP4Decoder::CreateStateMachine()
@@ -90,8 +89,7 @@ MP4Decoder::CanHandleMediaType(const MediaContentType& aType,
   // the web, as opposed to what we use internally (i.e. what our demuxers
   // etc output).
   const bool isMP4Audio = aType.GetMIMEType().EqualsASCII("audio/mp4") ||
-                          aType.GetMIMEType().EqualsASCII("audio/x-m4a") ||
-                          aType.GetMIMEType().EqualsASCII("audio/opus");
+                          aType.GetMIMEType().EqualsASCII("audio/x-m4a");
   const bool isMP4Video =
   // On B2G, treat 3GPP as MP4 when Gonk PDM is available.
 #ifdef MOZ_GONK_MEDIACODEC
@@ -106,7 +104,7 @@ MP4Decoder::CanHandleMediaType(const MediaContentType& aType,
 
   nsTArray<UniquePtr<TrackInfo>> trackInfos;
   if (aType.GetCodecs().IsEmpty()) {
-    // No codecs specified. Assume AAC/H.264
+    // No codecs specified. Assume H.264
     if (isMP4Audio) {
       trackInfos.AppendElement(
         CreateTrackInfoWithMIMETypeAndContentTypeExtraParameters(
@@ -135,6 +133,18 @@ MP4Decoder::CanHandleMediaType(const MediaContentType& aType,
         trackInfos.AppendElement(
           CreateTrackInfoWithMIMETypeAndContentTypeExtraParameters(
             NS_LITERAL_CSTRING("audio/mpeg"), aType));
+        continue;
+      }
+      if (codec.EqualsLiteral("opus")) {
+        trackInfos.AppendElement(
+          CreateTrackInfoWithMIMETypeAndContentTypeExtraParameters(
+            NS_LITERAL_CSTRING("audio/opus"), aType));
+        continue;
+      }
+      if (codec.EqualsLiteral("flac")) {
+        trackInfos.AppendElement(
+          CreateTrackInfoWithMIMETypeAndContentTypeExtraParameters(
+            NS_LITERAL_CSTRING("audio/flac"), aType));
         continue;
       }
       // Note: Only accept H.264 in a video content type, not in an audio
@@ -167,6 +177,13 @@ MP4Decoder::IsH264(const nsACString& aMimeType)
 {
   return aMimeType.EqualsLiteral("video/mp4") ||
          aMimeType.EqualsLiteral("video/avc");
+}
+
+/* static */
+bool
+MP4Decoder::IsAAC(const nsACString& aMimeType)
+{
+  return aMimeType.EqualsLiteral("audio/mp4a-latm");
 }
 
 /* static */

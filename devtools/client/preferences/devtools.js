@@ -37,7 +37,6 @@ pref("devtools.toolbox.splitconsoleEnabled", false);
 pref("devtools.toolbox.splitconsoleHeight", 100);
 
 // Toolbox Button preferences
-pref("devtools.command-button-pick.enabled", true);
 pref("devtools.command-button-frames.enabled", true);
 pref("devtools.command-button-splitconsole.enabled", true);
 pref("devtools.command-button-paintflashing.enabled", false);
@@ -96,17 +95,12 @@ pref("devtools.debugger.remote-timeout", 20000);
 pref("devtools.debugger.pause-on-exceptions", false);
 pref("devtools.debugger.ignore-caught-exceptions", true);
 pref("devtools.debugger.source-maps-enabled", true);
+pref("devtools.debugger.client-source-maps-enabled", true);
 pref("devtools.debugger.pretty-print-enabled", true);
 pref("devtools.debugger.auto-pretty-print", false);
 pref("devtools.debugger.auto-black-box", true);
 pref("devtools.debugger.workers", false);
-pref("devtools.debugger.promise", false);
-
-#if defined(NIGHTLY_BUILD)
 pref("devtools.debugger.new-debugger-frontend", true);
-#else
-pref("devtools.debugger.new-debugger-frontend", false);
-#endif
 
 // The default Debugger UI settings
 pref("devtools.debugger.ui.panes-workers-and-sources-width", 200);
@@ -247,6 +241,7 @@ pref("devtools.webconsole.filter.warn", true);
 pref("devtools.webconsole.filter.info", true);
 pref("devtools.webconsole.filter.log", true);
 pref("devtools.webconsole.filter.debug", true);
+pref("devtools.webconsole.filter.css", false);
 pref("devtools.webconsole.filter.net", false);
 pref("devtools.webconsole.filter.netxhr", false);
 // Deprecated - old console frontend
@@ -363,10 +358,5 @@ pref("devtools.jsonview.enabled", false);
 pref("devtools.jsonview.enabled", true);
 #endif
 
-// Enable the HTML responsive design tool in Nightly only.  Disabled by default for all
-// other channels.
-#ifdef NIGHTLY_BUILD
+// Enable the HTML responsive design mode for all channels.
 pref("devtools.responsive.html.enabled", true);
-#else
-pref("devtools.responsive.html.enabled", false);
-#endif

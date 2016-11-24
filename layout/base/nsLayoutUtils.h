@@ -281,7 +281,7 @@ public:
    * @return the ::before frame or nullptr if there isn't one
    */
   static nsIFrame* GetBeforeFrameForContent(nsIFrame* aGenConParentFrame,
-                                            nsIContent* aContent);
+                                            const nsIContent* aContent);
 
   /**
    * GetBeforeFrame returns the outermost ::before frame of the given frame, if
@@ -304,7 +304,7 @@ public:
    * @return the ::after frame or nullptr if there isn't one
    */
   static nsIFrame* GetAfterFrameForContent(nsIFrame* aGenConParentFrame,
-                                           nsIContent* aContent);
+                                           const nsIContent* aContent);
 
   /**
    * GetAfterFrame returns the outermost ::after frame of the given frame, if one
@@ -1198,6 +1198,11 @@ public:
   static void GetAllInFlowRects(nsIFrame* aFrame, nsIFrame* aRelativeTo,
                                 RectCallback* aCallback, uint32_t aFlags = 0);
 
+  static void GetAllInFlowRectsAndTexts(nsIFrame* aFrame, nsIFrame* aRelativeTo,
+                                        RectCallback* aCallback,
+                                        mozilla::dom::DOMStringList* aTextList,
+                                        uint32_t aFlags = 0);
+
   /**
    * Computes the union of all rects returned by GetAllInFlowRects. If
    * the union is empty, returns the first rect.
@@ -1373,6 +1378,9 @@ public:
    * width, its 'width', 'min-width', and 'max-width' properties (or 'height'
    * variations if that's what matches aAxis) and its padding, border and margin
    * in the corresponding dimension.
+   * @param aMarginBoxMinSizeClamp make the result fit within this margin-box
+   * size by reducing the *content size* (flooring at zero).  This is used for:
+   * https://drafts.csswg.org/css-grid/#min-size-auto
    */
   enum class IntrinsicISizeType { MIN_ISIZE, PREF_ISIZE };
   static const auto MIN_ISIZE = IntrinsicISizeType::MIN_ISIZE;
@@ -1383,11 +1391,13 @@ public:
     MIN_INTRINSIC_ISIZE = 0x04, // use min-width/height instead of width/height
     ADD_PERCENTS = 0x08, // apply AddPercents also for MIN_ISIZE
   };
-  static nscoord IntrinsicForAxis(mozilla::PhysicalAxis aAxis,
-                                  nsRenderingContext*   aRenderingContext,
-                                  nsIFrame*             aFrame,
-                                  IntrinsicISizeType    aType,
-                                  uint32_t              aFlags = 0);
+  static nscoord
+  IntrinsicForAxis(mozilla::PhysicalAxis aAxis,
+                   nsRenderingContext*   aRenderingContext,
+                   nsIFrame*             aFrame,
+                   IntrinsicISizeType    aType,
+                   uint32_t              aFlags = 0,
+                   nscoord               aMarginBoxMinSizeClamp = NS_MAXSIZE);
   /**
    * Calls IntrinsicForAxis with aFrame's parent's inline physical axis.
    */
@@ -1402,8 +1412,9 @@ public:
    * given axis is vertical), and its padding, border, and margin in the
    * corresponding dimension.  If the 'min-' property is 'auto' (and 'overflow'
    * is 'visible') and the corresponding 'width'/'height' is definite it returns
-   * the "specified / transferred size" for:
+   * the "specified size" for:
    * https://drafts.csswg.org/css-grid/#min-size-auto
+   * Note that the "transferred size" is not handled here; use IntrinsicForAxis.
    * Note that any percentage in 'width'/'height' makes it count as indefinite.
    * If the 'min-' property is 'auto' and 'overflow' is not 'visible', then it
    * calculates the result as if the 'min-' computed value is zero.
@@ -1442,14 +1453,6 @@ public:
    */
   static nscoord ComputeCBDependentValue(nscoord aPercentBasis,
                                          const nsStyleCoord& aCoord);
-
-  static nscoord ComputeISizeValue(
-                   nsRenderingContext* aRenderingContext,
-                   nsIFrame*           aFrame,
-                   nscoord             aContainingBlockISize,
-                   nscoord             aContentEdgeToBoxSizing,
-                   nscoord             aBoxSizingToMarginEdge,
-                   const nsStyleCoord& aCoord);
 
   static nscoord ComputeBSizeDependentValue(
                    nscoord              aContainingBlockBSize,
@@ -1519,21 +1522,6 @@ public:
   static void MarkDescendantsDirty(nsIFrame *aSubtreeRoot);
 
   static void MarkIntrinsicISizesDirtyIfDependentOnBSize(nsIFrame* aFrame);
-
-  /*
-   * Calculate the used values for 'width' and 'height' for a replaced element.
-   *
-   *   http://www.w3.org/TR/CSS21/visudet.html#min-max-widths
-   */
-  static mozilla::LogicalSize
-  ComputeSizeWithIntrinsicDimensions(mozilla::WritingMode aWM,
-                    nsRenderingContext* aRenderingContext, nsIFrame* aFrame,
-                    const mozilla::IntrinsicSize& aIntrinsicSize,
-                    nsSize aIntrinsicRatio,
-                    const mozilla::LogicalSize& aCBSize,
-                    const mozilla::LogicalSize& aMargin,
-                    const mozilla::LogicalSize& aBorder,
-                    const mozilla::LogicalSize& aPadding);
 
   /*
    * Calculate the used values for 'width' and 'height' when width
@@ -2230,13 +2218,6 @@ public:
                                         bool clear);
 
   /**
-   * Returns true if the frame has animations or transitions that are running
-   * or filling forwards for the specified property.
-   */
-  static bool HasActiveAnimationOfProperty(const nsIFrame* aFrame,
-                                           nsCSSPropertyID aProperty);
-
-  /**
    * Returns true if the frame has any current CSS transitions.
    * A current transition is any transition that has not yet finished playing
    * including paused transitions.
@@ -2244,12 +2225,18 @@ public:
   static bool HasCurrentTransitions(const nsIFrame* aFrame);
 
   /**
-   * Returns true if the frame has current or in-effect (i.e. in before phase,
-   * running or filling) animations or transitions for the
-   * property.
+   * Returns true if |aFrame| has an animation of |aProperty| regardless of
+   * whether the property is overridden by !important rule.
    */
-  static bool HasRelevantAnimationOfProperty(const nsIFrame* aFrame,
-                                             nsCSSPropertyID aProperty);
+  static bool HasAnimationOfProperty(const nsIFrame* aFrame,
+                                     nsCSSPropertyID aProperty);
+
+  /**
+   * Returns true if |aFrame| has an animation of |aProperty| which is
+   * not overridden by !important rules.
+   */
+  static bool HasEffectiveAnimation(const nsIFrame* aFrame,
+                                    nsCSSPropertyID aProperty);
 
   /**
    * Checks if off-main-thread animations are enabled.
@@ -2428,6 +2415,14 @@ public:
 #else
     return false;
 #endif
+  }
+
+  static uint32_t IdlePeriodDeadlineLimit() {
+    return sIdlePeriodDeadlineLimit;
+  }
+
+  static uint32_t QuiescentFramesBeforeIdlePeriod() {
+    return sQuiescentFramesBeforeIdlePeriod;
   }
 
   /**
@@ -2857,6 +2852,19 @@ public:
    */
   static bool SupportsServoStyleBackend(nsIDocument* aDocument);
 
+  /*
+   * Checks whether a node is an invisible break.
+   * If not, returns the first frame on the next line if such a next line exists.
+   *
+   * @return  true if the node is an invisible break.
+   *          aNextLineFrame is returned null in this case.
+   *          false if the node causes a visible break or if the node is no break.
+   *
+   * @param   aNextLineFrame  assigned to first frame on the next line if such a
+   *                          next line exists, null otherwise.
+   */
+  static bool IsInvisibleBreak(nsINode* aNode, nsIFrame** aNextLineFrame = nullptr);
+
 private:
   static uint32_t sFontSizeInflationEmPerLine;
   static uint32_t sFontSizeInflationMinTwips;
@@ -2873,6 +2881,8 @@ private:
 #ifdef MOZ_STYLO
   static bool sStyloEnabled;
 #endif
+  static uint32_t sIdlePeriodDeadlineLimit;
+  static uint32_t sQuiescentFramesBeforeIdlePeriod;
 
   /**
    * Helper function for LogTestDataForPaint().

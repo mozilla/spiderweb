@@ -9,9 +9,9 @@ function getBrowserAction(extension) {
   return browserActionFor(ext);
 }
 
-function* testInArea(area) {
-  let scriptPage = url => `<html><head><meta charset="utf-8"><script src="${url}"></script></head><body>${url}</body></html>`;
+let scriptPage = url => `<html><head><meta charset="utf-8"><script src="${url}"></script></head><body>${url}</body></html>`;
 
+function* testInArea(area) {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
       "background": {
@@ -82,7 +82,7 @@ function* testInArea(area) {
           () => {
             browser.test.log(`Set popup to "c" and click browser action. Expect popup "c".`);
             browser.browserAction.setPopup({popup: "popup-c.html"});
-            sendClick({expectEvent: false, expectPopup: "c", closePopup: false});
+            sendClick({expectEvent: false, expectPopup: "c", waitUntilClosed: true});
           },
           () => {
             browser.test.log(`Set popup to "b" and click browser action. Expect popup "b".`);
@@ -120,7 +120,7 @@ function* testInArea(area) {
         let expect = {};
         sendClick = ({expectEvent, expectPopup, runNextTest, waitUntilClosed, closePopup}, message = "send-click") => {
           if (closePopup == undefined) {
-            closePopup = true;
+            closePopup = !expectEvent;
           }
 
           expect = {event: expectEvent, popup: expectPopup, runNextTest, waitUntilClosed, closePopup};
@@ -190,8 +190,11 @@ function* testInArea(area) {
       CustomizableUI.addWidgetToArea(widget.id, area);
     }
     if (expecting.waitUntilClosed) {
+      yield new Promise(resolve => setTimeout(resolve, 0));
+
       let panel = getBrowserActionPopup(extension);
       if (panel && panel.state != "closed") {
+        info("Popup is open. Waiting for close");
         yield promisePopupHidden(panel);
       }
     } else if (expecting.closePopupUsingWindow) {
@@ -204,9 +207,16 @@ function* testInArea(area) {
       yield promisePopupHidden(panel);
       ok(true, "Panel is closed");
     } else if (expecting.closePopup) {
+      if (!getBrowserActionPopup(extension)) {
+        info("Waiting for panel");
+        yield awaitExtensionPanel(extension);
+      }
+
+      info("Closing for panel");
       yield closeBrowserAction(extension);
     }
 
+    info("Starting next test");
     extension.sendMessage("next-test");
   }));
 
@@ -224,70 +234,4 @@ add_task(function* testBrowserActionInToolbar() {
 
 add_task(function* testBrowserActionInPanel() {
   yield testInArea(CustomizableUI.AREA_PANEL);
-});
-
-add_task(function* testBrowserActionClickCanceled() {
-  let extension = ExtensionTestUtils.loadExtension({
-    manifest: {
-      "browser_action": {
-        "default_popup": "popup.html",
-        "browser_style": true,
-      },
-    },
-
-    files: {
-      "popup.html": `<!DOCTYPE html><html><head><meta charset="utf-8"></head></html>`,
-    },
-  });
-
-  yield extension.startup();
-
-  const {GlobalManager, Management: {global: {browserActionFor}}} = Cu.import("resource://gre/modules/Extension.jsm", {});
-
-  let ext = GlobalManager.extensionMap.get(extension.id);
-  let browserAction = browserActionFor(ext);
-
-  let widget = getBrowserActionWidget(extension).forWindow(window);
-
-  // Test canceled click.
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mousedown", button: 0}, window);
-
-  isnot(browserAction.pendingPopup, null, "Have pending popup");
-  is(browserAction.pendingPopup.window, window, "Have pending popup for the correct window");
-
-  is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-
-  EventUtils.synthesizeMouseAtCenter(document.documentElement, {type: "mouseup", button: 0}, window);
-
-  is(browserAction.pendingPopup, null, "Pending popup was cleared");
-  is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-
-  // Test completed click.
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mousedown", button: 0}, window);
-
-  isnot(browserAction.pendingPopup, null, "Have pending popup");
-  is(browserAction.pendingPopup.window, window, "Have pending popup for the correct window");
-
-  is(browserAction.pendingPopupTimeout, null, "Have no pending popup timeout");
-
-  // We need to do these tests during the mouseup event cycle, since the click
-  // and command events will be dispatched immediately after mouseup, and void
-  // the results.
-  let mouseUpPromise = BrowserTestUtils.waitForEvent(widget.node, "mouseup", event => {
-    isnot(browserAction.pendingPopup, null, "Pending popup was not cleared");
-    isnot(browserAction.pendingPopupTimeout, null, "Have a pending popup timeout");
-    return true;
-  });
-
-  EventUtils.synthesizeMouseAtCenter(widget.node, {type: "mouseup", button: 0}, window);
-
-  yield mouseUpPromise;
-
-  is(browserAction.pendingPopup, null, "Pending popup was cleared");
-  is(browserAction.pendingPopupTimeout, null, "Pending popup timeout was cleared");
-
-  yield promisePopupShown(getBrowserActionPopup(extension));
-  yield closeBrowserAction(extension);
-
-  yield extension.unload();
 });

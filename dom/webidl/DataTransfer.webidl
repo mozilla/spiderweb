@@ -17,8 +17,10 @@ interface DataTransfer {
   [Throws]
   void setDragImage(Element image, long x, long y);
 
-  [Throws]
-  readonly attribute DOMStringList types;
+  // ReturnValueNeedsContainsHack on .types because lots of extension
+  // code was expecting .contains() back when it was a DOMStringList.
+  [Pure, Cached, Frozen, NeedsCallerType, ReturnValueNeedsContainsHack]
+  readonly attribute sequence<DOMString> types;
   [Throws, NeedsSubjectPrincipal]
   DOMString getData(DOMString format);
   [Throws, NeedsSubjectPrincipal]
@@ -74,7 +76,7 @@ partial interface DataTransfer {
    * at the specified index. If the index is not in the range from 0 to
    * itemCount - 1, an empty string list is returned.
    */
-  [Throws]
+  [Throws, NeedsCallerType]
   DOMStringList mozTypesAt(unsigned long index);
 
   /**

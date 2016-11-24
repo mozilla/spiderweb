@@ -100,10 +100,6 @@
 #include "nsWrapperCacheInlines.h"
 #include "mozilla/dom/HTMLCollectionBinding.h"
 
-#ifdef MOZ_B2G_FM
-#include "FMRadio.h"
-#endif
-
 #include "nsDebug.h"
 
 #include "mozilla/dom/BindingUtils.h"
@@ -598,7 +594,6 @@ nsDOMClassInfo::Init()
   DOM_CLASSINFO_MAP_END
 
   DOM_CLASSINFO_MAP_BEGIN_NO_CLASS_IF(ChromeMessageSender, nsISupports)
-    DOM_CLASSINFO_MAP_ENTRY(nsIProcessChecker)
     DOM_CLASSINFO_MAP_ENTRY(nsIFrameScriptLoader)
     DOM_CLASSINFO_MAP_ENTRY(nsIProcessScriptLoader)
     DOM_CLASSINFO_MAP_ENTRY(nsIMessageListenerManager)

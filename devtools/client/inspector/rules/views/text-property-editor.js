@@ -342,14 +342,15 @@ TextPropertyEditor.prototype = {
 
     let outputParser = this.ruleView._outputParser;
     let parserOptions = {
-      colorSwatchClass: SHARED_SWATCH_CLASS + " " + COLOR_SWATCH_CLASS,
-      colorClass: "ruleview-color",
-      bezierSwatchClass: SHARED_SWATCH_CLASS + " " + BEZIER_SWATCH_CLASS,
-      bezierClass: "ruleview-bezier",
-      filterSwatchClass: SHARED_SWATCH_CLASS + " " + FILTER_SWATCH_CLASS,
-      filterClass: "ruleview-filter",
-      angleSwatchClass: SHARED_SWATCH_CLASS + " " + ANGLE_SWATCH_CLASS,
       angleClass: "ruleview-angle",
+      angleSwatchClass: SHARED_SWATCH_CLASS + " " + ANGLE_SWATCH_CLASS,
+      bezierClass: "ruleview-bezier",
+      bezierSwatchClass: SHARED_SWATCH_CLASS + " " + BEZIER_SWATCH_CLASS,
+      colorClass: "ruleview-color",
+      colorSwatchClass: SHARED_SWATCH_CLASS + " " + COLOR_SWATCH_CLASS,
+      filterClass: "ruleview-filter",
+      filterSwatchClass: SHARED_SWATCH_CLASS + " " + FILTER_SWATCH_CLASS,
+      gridClass: "ruleview-grid",
       defaultColorType: !propDirty,
       urlClass: "theme-link",
       baseURI: this.sheetHref
@@ -424,6 +425,15 @@ TextPropertyEditor.prototype = {
       }
     }
 
+    let gridToggle = this.valueSpan.querySelector(".ruleview-grid");
+    if (gridToggle) {
+      gridToggle.setAttribute("title", l10n("rule.gridToggle.tooltip"));
+      if (this.ruleView.highlighters.gridHighlighterShown ===
+          this.ruleView.inspector.selection.nodeFront) {
+        gridToggle.classList.add("active");
+      }
+    }
+
     // Now that we have updated the property's value, we might have a pending
     // click on the value container. If we do, we have to trigger a click event
     // on the right element.
@@ -453,6 +463,7 @@ TextPropertyEditor.prototype = {
 
   _onStartEditing: function () {
     this.element.classList.remove("ruleview-overridden");
+    this.filterProperty.hidden = true;
     this.enable.style.visibility = "hidden";
   },
 
@@ -724,6 +735,10 @@ TextPropertyEditor.prototype = {
       return;
     }
 
+    if (this.isDisplayGrid()) {
+      this.ruleView.highlighters._hideGridHighlighter();
+    }
+
     // First, set this property value (common case, only modified a property)
     this.prop.setValue(val.value, val.priority);
 
@@ -850,6 +865,15 @@ TextPropertyEditor.prototype = {
    */
   isValid: function () {
     return this.prop.isValid();
+  },
+
+  /**
+   * Returns true if the property is a `display: grid` declaration.
+   *
+   * @return {Boolean} true if the property is a `display: grid` declaration.
+   */
+  isDisplayGrid: function () {
+    return this.prop.name === "display" && this.prop.value === "grid";
   }
 };
 

@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/DeclarationBlockInlines.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStateManager.h"
@@ -90,7 +91,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/FromParser.h"
 #include "mozilla/dom/Link.h"
-#include "mozilla/dom/UndoManager.h"
 #include "mozilla/BloomFilter.h"
 
 #include "nsVariant.h"
@@ -188,12 +188,12 @@ nsGenericHTMLElement::CopyInnerTo(Element* aDst)
     value->ToString(valStr);
 
     if (name->Equals(nsGkAtoms::style, kNameSpaceID_None) &&
-        value->Type() == nsAttrValue::eGeckoCSSDeclaration) {
+        value->Type() == nsAttrValue::eCSSDeclaration) {
+      DeclarationBlock* decl = value->GetCSSDeclarationValue();
       // We can't just set this as a string, because that will fail
       // to reparse the string into style data until the node is
       // inserted into the document.  Clone the Rule instead.
-      RefPtr<css::Declaration> declClone =
-        new css::Declaration(*value->GetGeckoCSSDeclarationValue());
+      RefPtr<DeclarationBlock> declClone = decl->Clone();
 
       rv = aDst->SetInlineStyleDeclaration(declClone, &valStr, false);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -591,16 +591,16 @@ nsGenericHTMLElement::CheckHandleEventForAnchorsPreconditions(
 }
 
 nsresult
-nsGenericHTMLElement::PreHandleEventForAnchors(EventChainPreVisitor& aVisitor)
+nsGenericHTMLElement::GetEventTargetParentForAnchors(EventChainPreVisitor& aVisitor)
 {
-  nsresult rv = nsGenericHTMLElementBase::PreHandleEvent(aVisitor);
+  nsresult rv = nsGenericHTMLElementBase::GetEventTargetParent(aVisitor);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!CheckHandleEventForAnchorsPreconditions(aVisitor)) {
     return NS_OK;
   }
 
-  return PreHandleEventForLinks(aVisitor);
+  return GetEventTargetParentForLinks(aVisitor);
 }
 
 nsresult
@@ -809,8 +809,6 @@ nsGenericHTMLElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
 {
   bool contentEditable = aNameSpaceID == kNameSpaceID_None &&
                            aName == nsGkAtoms::contenteditable;
-  bool undoScope = aNameSpaceID == kNameSpaceID_None &&
-                           aName == nsGkAtoms::undoscope;
   bool accessKey = aName == nsGkAtoms::accesskey && 
                      aNameSpaceID == kNameSpaceID_None;
 
@@ -834,11 +832,6 @@ nsGenericHTMLElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
     }
 
     ChangeEditableState(change);
-  }
-
-  if (undoScope) {
-    rv = SetUndoScopeInternal(true);
-    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   if (accessKey && !aValue.IsEmpty()) {
@@ -866,10 +859,6 @@ nsGenericHTMLElement::UnsetAttr(int32_t aNameSpaceID, nsIAtom* aAttribute,
     else if (aAttribute == nsGkAtoms::contenteditable) {
       contentEditable = true;
       contentEditableChange = GetContentEditableValue() == eTrue ? -1 : 0;
-    }
-    else if (aAttribute == nsGkAtoms::undoscope) {
-      nsresult rv = SetUndoScopeInternal(false);
-      NS_ENSURE_SUCCESS(rv, rv);
     }
     else if (aAttribute == nsGkAtoms::accesskey) {
       // Have to unregister before clearing flag. See UnregAccessKey
@@ -1269,11 +1258,11 @@ nsGenericHTMLElement::MapCommonAttributesIntoExceptHidden(const nsMappedAttribut
       if (value) {
         if (value->Equals(nsGkAtoms::_empty, eCaseMatters) ||
             value->Equals(nsGkAtoms::_true, eIgnoreCase)) {
-          userModify->SetIntValue(NS_STYLE_USER_MODIFY_READ_WRITE,
+          userModify->SetIntValue(StyleUserModify::ReadWrite,
                                   eCSSUnit_Enumerated);
         }
         else if (value->Equals(nsGkAtoms::_false, eIgnoreCase)) {
-            userModify->SetIntValue(NS_STYLE_USER_MODIFY_READ_ONLY,
+            userModify->SetIntValue(StyleUserModify::ReadOnly,
                                     eCSSUnit_Enumerated);
         }
       }
@@ -1684,68 +1673,6 @@ nsGenericHTMLElement::IsScrollGrabAllowed(JSContext*, JSObject*)
   return nsContentUtils::IsSystemPrincipal(prin);
 }
 
-nsresult
-nsGenericHTMLElement::GetURIListAttr(nsIAtom* aAttr, nsAString& aResult)
-{
-  aResult.Truncate();
-
-  nsAutoString value;
-  if (!GetAttr(kNameSpaceID_None, aAttr, value))
-    return NS_OK;
-
-  nsIDocument* doc = OwnerDoc(); 
-  nsCOMPtr<nsIURI> baseURI = GetBaseURI();
-
-  nsString::const_iterator end;
-  value.EndReading(end);
-
-  nsAString::const_iterator iter;
-  value.BeginReading(iter);
-
-  while (iter != end) {
-    while (*iter == ' ' && iter != end) {
-      ++iter;
-    }
-
-    if (iter == end) {
-      break;
-    }
-
-    nsAString::const_iterator start = iter;
-
-    while (iter != end && *iter != ' ') {
-      ++iter;
-    }
-
-    if (!aResult.IsEmpty()) {
-      aResult.Append(NS_LITERAL_STRING(" "));
-    }
-
-    const nsSubstring& uriPart = Substring(start, iter);
-    nsCOMPtr<nsIURI> attrURI;
-    nsresult rv =
-      nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(attrURI),
-                                                uriPart, doc, baseURI);
-    if (NS_FAILED(rv)) {
-      aResult.Append(uriPart);
-      continue;
-    }
-
-    MOZ_ASSERT(attrURI);
-
-    nsAutoCString spec;
-    rv = attrURI->GetSpec(spec);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      aResult.Append(uriPart);
-      continue;
-    }
-
-    AppendUTF8toUTF16(spec, aResult);
-  }
-
-  return NS_OK;
-}
-
 HTMLMenuElement*
 nsGenericHTMLElement::GetContextMenu() const
 {
@@ -1780,78 +1707,6 @@ nsGenericHTMLElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const
   return IsAnyOfHTMLElements(nsGkAtoms::details, nsGkAtoms::embed,
                              nsGkAtoms::keygen) ||
          (!aIgnoreTabindex && HasAttr(kNameSpaceID_None, nsGkAtoms::tabindex));
-}
-
-already_AddRefed<UndoManager>
-nsGenericHTMLElement::GetUndoManager()
-{
-  nsDOMSlots* slots = GetExistingDOMSlots();
-  if (slots && slots->mUndoManager) {
-    RefPtr<UndoManager> undoManager = slots->mUndoManager;
-    return undoManager.forget();
-  } else {
-    return nullptr;
-  }
-}
-
-bool
-nsGenericHTMLElement::UndoScope()
-{
-  nsDOMSlots* slots = GetExistingDOMSlots();
-  return slots && slots->mUndoManager;
-}
-
-void
-nsGenericHTMLElement::SetUndoScope(bool aUndoScope, mozilla::ErrorResult& aError)
-{
-  nsresult rv = SetUndoScopeInternal(aUndoScope);
-  if (NS_FAILED(rv)) {
-    aError.Throw(rv);
-    return;
-  }
-
-  // The undoScope property must reflect the undoscope boolean attribute.
-  if (aUndoScope) {
-    rv = SetAttr(kNameSpaceID_None, nsGkAtoms::undoscope,
-                 NS_LITERAL_STRING(""), true);
-  } else {
-    rv = UnsetAttr(kNameSpaceID_None, nsGkAtoms::undoscope, true);
-  }
-
-  if (NS_FAILED(rv)) {
-    aError.Throw(rv);
-    return;
-  }
-}
-
-nsresult
-nsGenericHTMLElement::SetUndoScopeInternal(bool aUndoScope)
-{
-  if (aUndoScope) {
-    nsDOMSlots* slots = DOMSlots();
-    if (!slots->mUndoManager) {
-      slots->mUndoManager = new UndoManager(this);
-    }
-  } else {
-    nsDOMSlots* slots = GetExistingDOMSlots();
-    if (slots && slots->mUndoManager) {
-      // Clear transaction history and disconnect.
-      ErrorResult rv;
-      slots->mUndoManager->ClearRedo(rv);
-      if (rv.Failed()) {
-        return rv.StealNSResult();
-      }
-
-      slots->mUndoManager->ClearUndo(rv);
-      if (rv.Failed()) {
-        return rv.StealNSResult();
-      }
-
-      slots->mUndoManager->Disconnect();
-      slots->mUndoManager = nullptr;
-    }
-  }
-  return NS_OK;
 }
 
 // static
@@ -1936,13 +1791,11 @@ nsGenericHTMLFormElement::ClearForm(bool aRemoveFromForm)
     mForm->RemoveElement(this, true);
 
     if (!nameVal.IsEmpty()) {
-      mForm->RemoveElementFromTable(this, nameVal,
-                                    HTMLFormElement::ElementRemoved);
+      mForm->RemoveElementFromTable(this, nameVal);
     }
 
     if (!idVal.IsEmpty()) {
-      mForm->RemoveElementFromTable(this, idVal,
-                                    HTMLFormElement::ElementRemoved);
+      mForm->RemoveElementFromTable(this, idVal);
     }
   }
 
@@ -2079,8 +1932,7 @@ nsGenericHTMLFormElement::BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
       GetAttr(kNameSpaceID_None, aName, tmp);
 
       if (!tmp.IsEmpty()) {
-        mForm->RemoveElementFromTable(this, tmp,
-                                      HTMLFormElement::AttributeUpdated);
+        mForm->RemoveElementFromTable(this, tmp);
       }
     }
 
@@ -2088,15 +1940,13 @@ nsGenericHTMLFormElement::BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
       GetAttr(kNameSpaceID_None, nsGkAtoms::name, tmp);
 
       if (!tmp.IsEmpty()) {
-        mForm->RemoveElementFromTable(this, tmp,
-                                      HTMLFormElement::AttributeUpdated);
+        mForm->RemoveElementFromTable(this, tmp);
       }
 
       GetAttr(kNameSpaceID_None, nsGkAtoms::id, tmp);
 
       if (!tmp.IsEmpty()) {
-        mForm->RemoveElementFromTable(this, tmp,
-                                      HTMLFormElement::AttributeUpdated);
+        mForm->RemoveElementFromTable(this, tmp);
       }
 
       mForm->RemoveElement(this, false);
@@ -2186,7 +2036,19 @@ nsGenericHTMLFormElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
 }
 
 nsresult
-nsGenericHTMLFormElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
+nsGenericHTMLFormElement::GetEventTargetParent(EventChainPreVisitor& aVisitor)
+{
+  if (aVisitor.mEvent->IsTrusted() && (aVisitor.mEvent->mMessage == eFocus ||
+                                       aVisitor.mEvent->mMessage == eBlur)) {
+    // We have to handle focus/blur event to change focus states in
+    // PreHandleEvent to prevent it breaks event target chain creation.
+    aVisitor.mWantsPreHandleEvent = true;
+  }
+  return nsGenericHTMLElement::GetEventTargetParent(aVisitor);
+}
+
+nsresult
+nsGenericHTMLFormElement::PreHandleEvent(EventChainVisitor& aVisitor)
 {
   if (aVisitor.mEvent->IsTrusted()) {
     switch (aVisitor.mEvent->mMessage) {
@@ -2210,7 +2072,6 @@ nsGenericHTMLFormElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
         break;
     }
   }
-
   return nsGenericHTMLElement::PreHandleEvent(aVisitor);
 }
 
@@ -2416,8 +2277,8 @@ nsGenericHTMLFormElement::IsElementDisabledForEvents(EventMessage aMessage,
   bool disabled = IsDisabled();
   if (!disabled && aFrame) {
     const nsStyleUserInterface* uiStyle = aFrame->StyleUserInterface();
-    disabled = uiStyle->mUserInput == NS_STYLE_USER_INPUT_NONE ||
-      uiStyle->mUserInput == NS_STYLE_USER_INPUT_DISABLED;
+    disabled = uiStyle->mUserInput == StyleUserInput::None ||
+               uiStyle->mUserInput == StyleUserInput::Disabled;
 
   }
   return disabled;
@@ -2558,7 +2419,7 @@ nsGenericHTMLFormElement::IsLabelable() const
 //----------------------------------------------------------------------
 
 void
-nsGenericHTMLElement::Click()
+nsGenericHTMLElement::Click(CallerType aCallerType)
 {
   if (HandlingClick())
     return;
@@ -2577,10 +2438,8 @@ nsGenericHTMLElement::Click()
 
   SetHandlingClick();
 
-  // Click() is never called from native code, but it may be
-  // called from chrome JS. Mark this event trusted if Click()
-  // is called from chrome code.
-  WidgetMouseEvent event(nsContentUtils::IsCallerChrome(),
+  // Mark this event trusted if Click() is called from system code.
+  WidgetMouseEvent event(aCallerType == CallerType::System,
                          eMouseClick, nullptr, WidgetMouseEvent::eReal);
   event.inputSource = nsIDOMMouseEvent::MOZ_SOURCE_UNKNOWN;
 
@@ -2712,13 +2571,6 @@ nsGenericHTMLElement::DispatchSimulatedClick(nsGenericHTMLElement* aElement,
 nsresult
 nsGenericHTMLElement::GetEditor(nsIEditor** aEditor)
 {
-  *aEditor = nullptr;
-
-  // See also HTMLTextFieldAccessible::GetEditor.
-  if (!nsContentUtils::LegacyIsCallerChromeOrNativeCode()) {
-    return NS_ERROR_DOM_SECURITY_ERR;
-  }
-
   NS_IF_ADDREF(*aEditor = GetEditorInternal());
   return NS_OK;
 }

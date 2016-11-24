@@ -1,4 +1,6 @@
-
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 <!DOCTYPE HTML>
 <html>
 <!--
@@ -19,6 +21,7 @@ Test GripMap rep
 window.onload = Task.async(function* () {
   let { Rep } = browserRequire("devtools/client/shared/components/reps/rep");
   let { GripMap } = browserRequire("devtools/client/shared/components/reps/grip-map");
+  const { MODE } = browserRequire("devtools/client/shared/components/reps/constants");
 
   const componentUnderTest = GripMap;
 
@@ -55,15 +58,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: "Map",
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: defaultOutput,
       }
     ];
@@ -84,15 +87,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: "Map",
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: defaultOutput,
       }
     ];
@@ -118,15 +121,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: "WeakMap",
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: defaultOutput,
       }
     ];
@@ -147,15 +150,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: "Map",
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: defaultOutput,
       }
     ];
@@ -172,8 +175,8 @@ window.onload = Task.async(function* () {
       `Map { key-0: "value-0", key-1: "value-1", key-2: "value-2", 98 more… }`;
 
     // Generate string with 101 entries, which is the max limit for 'long' mode.
-    let longString = Array.from({length: 100}).map((_, i) => `key-${i}: "value-${i}"`);
-    const longOutput = `Map { ${longString.join(", ")}, 1 more… }`;
+    let longString = Array.from({length: 10}).map((_, i) => `key-${i}: "value-${i}"`);
+    const longOutput = `Map { ${longString.join(", ")}, 91 more… }`;
 
     const modeTests = [
       {
@@ -181,15 +184,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: `Map`,
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: longOutput,
       }
     ];
@@ -213,15 +216,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: `Map`,
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: longOutput,
       }
     ];

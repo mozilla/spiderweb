@@ -336,8 +336,7 @@ WebConsoleActor.prototype =
   /**
    * Destroy the current WebConsoleActor instance.
    */
-  disconnect: function WCA_disconnect()
-  {
+  destroy() {
     if (this.consoleServiceListener) {
       this.consoleServiceListener.destroy();
       this.consoleServiceListener = null;
@@ -551,9 +550,7 @@ WebConsoleActor.prototype =
     return this._lastConsoleInputEvaluation;
   },
 
-  // ////////////////
   // Request handlers for known packet types.
-  // ////////////////
 
   /**
    * Handler for the "startListeners" request.
@@ -572,11 +569,9 @@ WebConsoleActor.prototype =
 
     let startedListeners = [];
     let window = !this.parentActor.isRootActor ? this.window : null;
-    let appId = null;
     let messageManager = null;
 
     if (this._parentIsContentActor) {
-      appId = this.parentActor.docShell.appId;
       messageManager = this.parentActor.messageManager;
     }
 
@@ -607,16 +602,16 @@ WebConsoleActor.prototype =
             // Create a StackTraceCollector that's going to be shared both by the
             // NetworkMonitorChild (getting messages about requests from parent) and
             // by the NetworkMonitor that directly watches service workers requests.
-            this.stackTraceCollector = new StackTraceCollector({ window, appId });
+            this.stackTraceCollector = new StackTraceCollector({ window });
             this.stackTraceCollector.init();
 
             let processBoundary = Services.appinfo.processType !=
                                   Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT;
-            if ((appId || messageManager) && processBoundary) {
+            if (messageManager && processBoundary) {
               // Start a network monitor in the parent process to listen to
               // most requests than happen in parent
               this.networkMonitor =
-                new NetworkMonitorChild(appId, this.parentActor.outerWindowID,
+                new NetworkMonitorChild(this.parentActor.outerWindowID,
                                         messageManager, this.conn, this);
               this.networkMonitor.init();
               // Spawn also one in the child to listen to service workers
@@ -890,7 +885,7 @@ WebConsoleActor.prototype =
     let evalResult = evalInfo.result;
     let helperResult = evalInfo.helperResult;
 
-    let result, errorDocURL, errorMessage, errorGrip = null;
+    let result, errorDocURL, errorMessage, errorGrip = null, frame = null;
     if (evalResult) {
       if ("return" in evalResult) {
         result = evalResult.return;
@@ -931,6 +926,20 @@ WebConsoleActor.prototype =
         try {
           errorDocURL = ErrorDocs.GetURL(error);
         } catch (ex) {}
+
+        try {
+          let line = error.errorLineNumber;
+          let column = error.errorColumnNumber;
+
+          if (typeof line === "number" && typeof column === "number") {
+            // Set frame only if we have line/column numbers.
+            frame = {
+              source: "debugger eval code",
+              line,
+              column
+            };
+          }
+        } catch (ex) {}
       }
     }
 
@@ -953,6 +962,7 @@ WebConsoleActor.prototype =
       exception: errorGrip,
       exceptionMessage: this._createStringGrip(errorMessage),
       exceptionDocURL: errorDocURL,
+      frame,
       helperResult: helperResult,
     };
   },
@@ -1059,7 +1069,7 @@ WebConsoleActor.prototype =
   {
     let prefs = Object.create(null);
     for (let key of aRequest.preferences) {
-      prefs[key] = !!this._prefs[key];
+      prefs[key] = this._prefs[key];
     }
     return { preferences: prefs };
   },
@@ -1093,9 +1103,7 @@ WebConsoleActor.prototype =
     return { updated: Object.keys(aRequest.preferences) };
   },
 
-  // ////////////////
   // End of request handlers.
-  // ////////////////
 
   /**
    * Create an object with the API we expose to the Web Console during
@@ -1207,6 +1215,8 @@ WebConsoleActor.prototype =
    *        in the Inspector (or null, if there is no selection). This is used
    *        for helper functions that make reference to the currently selected
    *        node, like $0.
+   *         - url: the url to evaluate the script as. Defaults to
+   *         "debugger eval code".
    * @return object
    *         An object that holds the following properties:
    *         - dbg: the debugger where the string was evaluated.
@@ -1216,8 +1226,6 @@ WebConsoleActor.prototype =
    *         - result: the result of the evaluation.
    *         - helperResult: any result coming from a Web Console commands
    *         function.
-   *         - url: the url to evaluate the script as. Defaults to
-   *         "debugger eval code".
    */
   evalWithDebugger: function WCA_evalWithDebugger(aString, aOptions = {})
   {
@@ -1429,9 +1437,7 @@ WebConsoleActor.prototype =
     };
   },
 
-  // ////////////////
   // Event handlers for various listeners.
-  // ////////////////
 
   /**
    * Handler for messages received from the ConsoleServiceListener. This method
@@ -1709,9 +1715,7 @@ WebConsoleActor.prototype =
     this.conn.send(packet);
   },
 
-  // ////////////////
   // End of event handlers for various listeners.
-  // ////////////////
 
   /**
    * Prepare a message from the console API to be sent to the remote Web Console
@@ -1736,6 +1740,7 @@ WebConsoleActor.prototype =
     delete result.ID;
     delete result.innerID;
     delete result.consoleID;
+    delete result.originAttributes;
 
     result.arguments = Array.map(aMessage.arguments || [], (aObj) => {
       let dbgObj = this.makeDebuggeeValue(aObj, aUseObjectGlobal);

@@ -727,6 +727,7 @@ menuitem.bookmark-item {
   padding: 0 8px;
   border-radius: 1em;
   background-color: hsla(0,0%,0%,.05);
+  color: inherit;
   border: 1px solid ThreeDLightShadow;
 }
 
@@ -911,6 +912,14 @@ notification[value="translation"] button:not([type="menu"]) > .button-box {
 
 notification[value="translation"] menulist > .menulist-dropmarker {
   display: block;
+}
+
+/* AutoComplete */
+
+%include ../shared/autocomplete.inc.css
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype~="datalist-first"] {
+  border-top: 1px solid ThreeDShadow;
 }
 
 #treecolAutoCompleteImage {

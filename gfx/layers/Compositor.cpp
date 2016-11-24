@@ -14,13 +14,6 @@
 #include "gfx2DGlue.h"
 #include "nsAppRunner.h"
 
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
-#include "libdisplay/GonkDisplay.h"     // for GonkDisplay
-#include <ui/Fence.h>
-#include "nsWindow.h"
-#include "nsScreenManagerGonk.h"
-#endif
-
 namespace mozilla {
 
 namespace layers {
@@ -94,7 +87,7 @@ Compositor::NotifyNotUsedAfterComposition(TextureHost* aTextureHost)
   const int thresholdCount = 5;
   const double thresholdSec = 2.0f;
   if (mNotifyNotUsedAfterComposition.Length() > thresholdCount) {
-    TimeDuration duration = TimeStamp::Now() - mLastCompositionEndTime;
+    TimeDuration duration = mLastCompositionEndTime ? TimeStamp::Now() - mLastCompositionEndTime : TimeDuration();
     // Check if we could flush
     if (duration.ToSeconds() > thresholdSec) {
       FlushPendingNotifyNotUsed();
@@ -180,9 +173,7 @@ Compositor::DrawDiagnosticsInternal(DiagnosticFlags aFlags,
                                     const gfx::Matrix4x4& aTransform,
                                     uint32_t aFlashCounter)
 {
-#ifdef MOZ_B2G
-  int lWidth = 4;
-#elif defined(ANDROID)
+#ifdef ANDROID
   int lWidth = 10;
 #else
   int lWidth = 2;
@@ -607,48 +598,10 @@ Compositor::IsValid() const
   return !!mParent;
 }
 
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
-void
-Compositor::SetDispAcquireFence(Layer* aLayer)
-{
-  // OpenGL does not provide ReleaseFence for rendering.
-  // Instead use DispAcquireFence as layer buffer's ReleaseFence
-  // to prevent flickering and tearing.
-  // DispAcquireFence is DisplaySurface's AcquireFence.
-  // AcquireFence will be signaled when a buffer's content is available.
-  // See Bug 974152.
-  if (!aLayer || !mWidget) {
-    return;
-  }
-  nsWindow* window = static_cast<nsWindow*>(mWidget->RealWidget());
-  RefPtr<FenceHandle::FdObj> fence = new FenceHandle::FdObj(
-      window->GetScreen()->GetPrevDispAcquireFd());
-  mReleaseFenceHandle.Merge(FenceHandle(fence));
-}
-
-FenceHandle
-Compositor::GetReleaseFence()
-{
-  if (!mReleaseFenceHandle.IsValid()) {
-    return FenceHandle();
-  }
-
-  RefPtr<FenceHandle::FdObj> fdObj = mReleaseFenceHandle.GetDupFdObj();
-  return FenceHandle(fdObj);
-}
-
-#else
 void
 Compositor::SetDispAcquireFence(Layer* aLayer)
 {
 }
-
-FenceHandle
-Compositor::GetReleaseFence()
-{
-  return FenceHandle();
-}
-#endif
 
 } // namespace layers
 } // namespace mozilla

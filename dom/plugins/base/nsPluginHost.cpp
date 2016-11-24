@@ -206,8 +206,7 @@ nsInvalidPluginTag::nsInvalidPluginTag(const char* aFullPath, int64_t aLastModif
   mSeen(false)
 {}
 
-nsInvalidPluginTag::~nsInvalidPluginTag()
-{}
+nsInvalidPluginTag::~nsInvalidPluginTag() = default;
 
 // Helper to check for a MIME in a comma-delimited preference
 static bool
@@ -275,6 +274,12 @@ nsPluginHost::nsPluginHost()
   // this manually.
   if (XRE_IsParentProcess()) {
     IncrementChromeEpoch();
+  } else {
+    // When NPAPI requests the proxy setting by calling |FindProxyForURL|,
+    // the service is requested and initialized asynchronously, but
+    // |FindProxyForURL| is synchronous, so we should initialize this earlier.
+    nsCOMPtr<nsIProtocolProxyService> proxyService =
+      do_GetService(NS_PROTOCOLPROXYSERVICE_CONTRACTID);
   }
 
   // check to see if pref is set at startup to let plugins take over in
@@ -1671,7 +1676,7 @@ public:
   nsPluginHost* host;
   NS_DECLARE_STATIC_IID_ACCESSOR(ClearDataFromSitesClosure_CID)
   private:
-  virtual ~ClearDataFromSitesClosure() {}
+  virtual ~ClearDataFromSitesClosure() = default;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(ClearDataFromSitesClosure, ClearDataFromSitesClosure_CID)
@@ -1777,8 +1782,7 @@ public:
   nsresult retVal;
   NS_DECLARE_STATIC_IID_ACCESSOR(GetSitesClosure_CID)
   private:
-  virtual ~GetSitesClosure() {
-  }
+  virtual ~GetSitesClosure() = default;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(GetSitesClosure, GetSitesClosure_CID)
@@ -1843,15 +1847,6 @@ nsPluginHost::GetSpecialType(const nsACString & aMIMEType)
       aMIMEType.LowerCaseEqualsASCII("application/x-silverlight-2") ||
       aMIMEType.LowerCaseEqualsASCII("application/x-silverlight-test")) {
     return eSpecialType_Silverlight;
-  }
-
-  if (aMIMEType.LowerCaseEqualsASCII("audio/x-pn-realaudio-plugin")) {
-    NS_WARNING("You are loading RealPlayer");
-    return eSpecialType_RealPlayer;
-  }
-
-  if (aMIMEType.LowerCaseEqualsASCII("application/pdf")) {
-    return eSpecialType_PDF;
   }
 
   if (aMIMEType.LowerCaseEqualsASCII("application/vnd.unity")) {
@@ -2075,7 +2070,7 @@ nsPluginHost::AddPluginTag(nsPluginTag* aPluginTag)
 static bool
 PluginInfoIsFlash(const nsPluginInfo& info)
 {
-  if (strcmp(info.fName, "Shockwave Flash") != 0) {
+  if (!info.fName || strcmp(info.fName, "Shockwave Flash") != 0) {
     return false;
   }
   for (uint32_t i = 0; i < info.fVariantCount; ++i) {
@@ -2535,39 +2530,6 @@ nsresult nsPluginHost::FindPlugins(bool aCreatePluginList, bool * aPluginsChange
     rv = mPrivateDirServiceProvider->GetPLIDDirectories(getter_AddRefs(dirList));
     if (NS_SUCCEEDED(rv)) {
       ScanPluginsDirectoryList(dirList, aCreatePluginList, &pluginschanged);
-
-      if (pluginschanged)
-        *aPluginsChanged = true;
-
-      // if we are just looking for possible changes,
-      // no need to proceed if changes are detected
-      if (!aCreatePluginList && *aPluginsChanged) {
-        NS_ITERATIVE_UNREF_LIST(RefPtr<nsPluginTag>, mCachedPlugins, mNext);
-        NS_ITERATIVE_UNREF_LIST(RefPtr<nsInvalidPluginTag>, mInvalidPlugins, mNext);
-        return NS_OK;
-      }
-    }
-  }
-
-
-  // Scan the installation paths of our popular plugins if the prefs are enabled
-
-  // This table controls the order of scanning
-  const char* const prefs[] = {NS_WIN_ACROBAT_SCAN_KEY,
-                               NS_WIN_QUICKTIME_SCAN_KEY,
-                               NS_WIN_WMP_SCAN_KEY};
-
-  uint32_t size = sizeof(prefs) / sizeof(prefs[0]);
-
-  for (uint32_t i = 0; i < size; i+=1) {
-    nsCOMPtr<nsIFile> dirToScan;
-    bool bExists;
-    if (NS_SUCCEEDED(dirService->Get(prefs[i], NS_GET_IID(nsIFile), getter_AddRefs(dirToScan))) &&
-        dirToScan &&
-        NS_SUCCEEDED(dirToScan->Exists(&bExists)) &&
-        bExists) {
-
-      ScanPluginsDirectory(dirToScan, aCreatePluginList, &pluginschanged);
 
       if (pluginschanged)
         *aPluginsChanged = true;
@@ -3793,7 +3755,7 @@ nsPluginHost::CreateTempFileToPost(const char *aPostDataURL, nsIFile **aTmpFile)
     char buf[1024];
     uint32_t br, bw;
     bool firstRead = true;
-    while (1) {
+    while (true) {
       // Read() mallocs if buffer is null
       rv = inStream->Read(buf, 1024, &br);
       if (NS_FAILED(rv) || (int32_t)br <= 0)
@@ -4107,7 +4069,7 @@ public:
     PR_APPEND_LINK(this, &sRunnableListHead);
   }
 
-  virtual ~nsPluginDestroyRunnable()
+  ~nsPluginDestroyRunnable() override
   {
     PR_REMOVE_LINK(this);
   }

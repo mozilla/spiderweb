@@ -1,6 +1,6 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
+
 "use strict";
 
 /**
@@ -8,11 +8,13 @@
  */
 
 add_task(function* () {
+  let { L10N } = require("devtools/client/netmonitor/l10n");
+
   let { tab, monitor } = yield initNetMonitor(STATUS_CODES_URL);
 
   info("Starting test... ");
 
-  let { document, EVENTS, L10N, NetMonitorView } = monitor.panelWin;
+  let { document, EVENTS, NetMonitorView } = monitor.panelWin;
   let { RequestsMenu, NetworkDetails } = NetMonitorView;
   let requestItems = [];
 

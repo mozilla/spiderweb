@@ -21,6 +21,15 @@ namespace mozilla {
 enum class CSSPseudoElementType : uint8_t;
 } // namespace mozilla
 
+extern "C" {
+#define STYLE_STRUCT(name_, checkdata_cb_)     \
+  struct nsStyle##name_;                       \
+  const nsStyle##name_* Servo_GetStyle##name_( \
+    ServoComputedValuesBorrowedOrNull computed_values);
+#include "nsStyleStructList.h"
+#undef STYLE_STRUCT
+}
+
 /**
  * An nsStyleContext represents the computed style data for an element.
  * The computed style data are stored in a set of structs (see
@@ -383,7 +392,7 @@ public:
    * Like the above, but allows comparing ServoComputedValues instead of needing
    * a full-fledged style context.
    */
-  nsChangeHint CalcStyleDifference(ServoComputedValues* aNewComputedValues,
+  nsChangeHint CalcStyleDifference(const ServoComputedValues* aNewComputedValues,
                                    nsChangeHint aParentHintsNotHandledForDescendants,
                                    uint32_t* aEqualStructs,
                                    uint32_t* aSamePointerStructs);
@@ -673,6 +682,8 @@ private:
           newData =                                                     \
             Servo_GetStyle##name_(mSource.AsServoComputedValues());     \
         }                                                               \
+        /* perform any remaining main thread work on the struct */      \
+        const_cast<nsStyle##name_*>(newData)->FinishStyle(PresContext());\
         /* the Servo-backed StyleContextSource owns the struct */       \
         AddStyleBit(NS_STYLE_INHERIT_BIT(name_));                       \
       }                                                                 \
@@ -701,6 +712,8 @@ private:
       } else {                                                          \
         newData =                                                       \
           Servo_GetStyle##name_(mSource.AsServoComputedValues());       \
+        /* perform any remaining main thread work on the struct */      \
+        const_cast<nsStyle##name_*>(newData)->FinishStyle(PresContext());\
         /* The Servo-backed StyleContextSource owns the struct.         \
          *                                                              \
          * XXXbholley: Unconditionally caching reset structs here       \

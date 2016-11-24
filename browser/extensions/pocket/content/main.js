@@ -41,6 +41,8 @@
 // TODO : [needs clarificaiton from Fx] Move prefs within pktApi.s to sqlite or a local file so it's not editable (and is safer)
 // TODO : [nice to have] - Immediately save, buffer the actions in a local queue and send (so it works offline, works like our native extensions)
 
+/* eslint-disable no-shadow */
+
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm");
@@ -52,18 +54,13 @@ XPCOMUtils.defineLazyModuleGetter(this, "pktApi",
 var pktUI = (function() {
 
     // -- Initialization (on startup and new windows) -- //
-    var inited = false;
     var _currentPanelDidShow;
     var _currentPanelDidHide;
-    var _isHidden = false;
-    var _notificationTimeout;
 
     // Init panel id at 0. The first actual panel id will have the number 1 so
     // in case at some point any panel has the id 0 we know there is something
     // wrong
     var _panelId = 0;
-
-    var prefBranch = Services.prefs.getBranch("extensions.pocket.settings.");
 
     var overflowMenuWidth = 230;
     var overflowMenuHeight = 475;
@@ -92,13 +89,6 @@ var pktUI = (function() {
         getPanelFrame().setAttribute('src', 'about:blank');
     }
 
-
-    /**
-     * Event handler when Pocket bookmark bar entry is pressed
-     */
-     function pocketBookmarkBarOpenPocketCommand(event) {
-        openTabWithUrl('https://getpocket.com/a/', true);
-     }
 
     // -- Communication to API -- //
 
@@ -173,7 +163,7 @@ var pktUI = (function() {
                 variant = 'storyboard_lm';
             }
 
-            var panelId = showPanel("about:pocket-signup?pockethost="
+            showPanel("about:pocket-signup?pockethost="
                 + Services.prefs.getCharPref("extensions.pocket.site")
                 + "&fxasignedin="
                 + fxasignedin
@@ -212,7 +202,7 @@ var pktUI = (function() {
             startheight = overflowMenuHeight;
         }
 
-        var panelId = showPanel("about:pocket-saved?pockethost=" + Services.prefs.getCharPref("extensions.pocket.site") + "&premiumStatus=" + (pktApi.isPremiumUser() ? '1' : '0') + '&inoverflowmenu='+inOverflowMenu + "&locale=" + getUILocale(), {
+        var panelId = showPanel("about:pocket-saved?pockethost=" + Services.prefs.getCharPref("extensions.pocket.site") + "&premiumStatus=" + (pktApi.isPremiumUser() ? '1' : '0') + '&inoverflowmenu=' + inOverflowMenu + "&locale=" + getUILocale(), {
             onShow: function() {
                 var saveLinkMessageId = 'saveLink';
 
@@ -572,14 +562,6 @@ var pktUI = (function() {
     function isInOverflowMenu() {
         var subview = getSubview();
         return !!subview;
-    }
-
-    function hasLegacyExtension() {
-        return !!document.getElementById('RIL_urlbar_add');
-    }
-
-    function isHidden() {
-        return _isHidden;
     }
 
     function getFirefoxAccountSignedInUser(callback) {

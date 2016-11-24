@@ -35,9 +35,11 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 extern crate mp4parse;
+extern crate byteorder;
 
 use std::io::Read;
 use std::collections::HashMap;
+use byteorder::WriteBytesExt;
 
 // Symbols we need from our rust api.
 use mp4parse::MediaContext;
@@ -52,6 +54,7 @@ use mp4parse::MediaScaledTime;
 use mp4parse::TrackTimeScale;
 use mp4parse::TrackScaledTime;
 use mp4parse::serialize_opus_header;
+use mp4parse::CodecType;
 
 // rusty-cheddar's C enum generation doesn't namespace enum members by
 // prefixing them, so we're forced to do it in our member names until
@@ -84,9 +87,11 @@ pub enum mp4parse_track_type {
 pub enum mp4parse_codec {
     MP4PARSE_CODEC_UNKNOWN,
     MP4PARSE_CODEC_AAC,
+    MP4PARSE_CODEC_FLAC,
     MP4PARSE_CODEC_OPUS,
     MP4PARSE_CODEC_AVC,
     MP4PARSE_CODEC_VP9,
+    MP4PARSE_CODEC_MP3,
 }
 
 #[repr(C)]
@@ -100,18 +105,31 @@ pub struct mp4parse_track_info {
 }
 
 #[repr(C)]
-pub struct mp4parse_codec_specific_config {
+pub struct mp4parse_byte_data {
     pub length: u32,
     pub data: *const u8,
 }
 
-impl Default for mp4parse_codec_specific_config {
+impl Default for mp4parse_byte_data {
     fn default() -> Self {
-        mp4parse_codec_specific_config {
+        mp4parse_byte_data {
             length: 0,
             data: std::ptr::null_mut(),
         }
     }
+}
+
+impl mp4parse_byte_data {
+    fn set_data(&mut self, data: &Vec<u8>) {
+        self.length = data.len() as u32;
+        self.data = data.as_ptr();
+    }
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub struct mp4parse_pssh_info {
+    pub data: mp4parse_byte_data,
 }
 
 #[derive(Default)]
@@ -123,7 +141,7 @@ pub struct mp4parse_track_audio_info {
     // TODO(kinetik):
     // int32_t profile;
     // int32_t extended_profile; // check types
-    codec_specific_config: mp4parse_codec_specific_config,
+    codec_specific_config: mp4parse_byte_data,
 }
 
 #[repr(C)]
@@ -151,6 +169,7 @@ struct Wrap {
     io: mp4parse_io,
     poisoned: bool,
     opus_header: HashMap<u32, Vec<u8>>,
+    pssh_data: Vec<u8>,
 }
 
 #[repr(C)]
@@ -180,6 +199,10 @@ impl mp4parse_parser {
 
     fn opus_header_mut(&mut self) -> &mut HashMap<u32, Vec<u8>> {
         &mut self.0.opus_header
+    }
+
+    fn pssh_data_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.0.pssh_data
     }
 }
 
@@ -225,6 +248,7 @@ pub unsafe extern fn mp4parse_new(io: *const mp4parse_io) -> *mut mp4parse_parse
         io: (*io).clone(),
         poisoned: false,
         opus_header: HashMap::new(),
+        pssh_data: Vec::new(),
     }));
     Box::into_raw(parser)
 }
@@ -342,8 +366,14 @@ pub unsafe extern fn mp4parse_get_track_info(parser: *mut mp4parse_parser, track
         Some(SampleEntry::Audio(ref audio)) => match audio.codec_specific {
             AudioCodecSpecific::OpusSpecificBox(_) =>
                 mp4parse_codec::MP4PARSE_CODEC_OPUS,
-            AudioCodecSpecific::ES_Descriptor(_) =>
+            AudioCodecSpecific::FLACSpecificBox(_) =>
+                mp4parse_codec::MP4PARSE_CODEC_FLAC,
+            AudioCodecSpecific::ES_Descriptor(ref esds) if esds.audio_codec == CodecType::AAC =>
                 mp4parse_codec::MP4PARSE_CODEC_AAC,
+            AudioCodecSpecific::ES_Descriptor(ref esds) if esds.audio_codec == CodecType::MP3 =>
+                mp4parse_codec::MP4PARSE_CODEC_MP3,
+            AudioCodecSpecific::ES_Descriptor(_) =>
+                mp4parse_codec::MP4PARSE_CODEC_UNKNOWN,
         },
         Some(SampleEntry::Video(ref video)) => match video.codec_specific {
             VideoCodecSpecific::VPxConfig(_) =>
@@ -357,10 +387,8 @@ pub unsafe extern fn mp4parse_get_track_info(parser: *mut mp4parse_parser, track
     let track = &context.tracks[track_index];
 
     if let (Some(track_timescale),
-            Some(context_timescale),
-            Some(track_duration)) = (track.timescale,
-                                     context.timescale,
-                                     track.duration) {
+            Some(context_timescale)) = (track.timescale,
+                                        context.timescale) {
         let media_time =
             match track.media_time.map_or(Some(0), |media_time| {
                     track_time_to_us(media_time, track_timescale) }) {
@@ -375,9 +403,14 @@ pub unsafe extern fn mp4parse_get_track_info(parser: *mut mp4parse_parser, track
             };
         info.media_time = media_time - empty_duration;
 
-        match track_time_to_us(track_duration, track_timescale) {
-            Some(duration) => info.duration = duration,
-            None => return MP4PARSE_ERROR_INVALID,
+        if let Some(track_duration) = track.duration {
+            match track_time_to_us(track_duration, track_timescale) {
+                Some(duration) => info.duration = duration,
+                None => return MP4PARSE_ERROR_INVALID,
+            }
+        } else {
+            // Duration unknown; stagefright returns 0 for this.
+            info.duration = 0
         }
     } else {
         return MP4PARSE_ERROR_INVALID
@@ -427,11 +460,26 @@ pub unsafe extern fn mp4parse_get_track_audio_info(parser: *mut mp4parse_parser,
 
     match audio.codec_specific {
         AudioCodecSpecific::ES_Descriptor(ref v) => {
-            if v.len() > std::u32::MAX as usize {
+            if v.codec_specific_config.len() > std::u32::MAX as usize {
                 return MP4PARSE_ERROR_INVALID;
             }
-            (*info).codec_specific_config.length = v.len() as u32;
-            (*info).codec_specific_config.data = v.as_ptr();
+            (*info).codec_specific_config.length = v.codec_specific_config.len() as u32;
+            (*info).codec_specific_config.data = v.codec_specific_config.as_ptr();
+            if let Some(rate) = v.audio_sample_rate {
+                (*info).sample_rate = rate;
+            }
+            if let Some(channels) = v.audio_channel_count {
+                (*info).channels = channels;
+            }
+        }
+        AudioCodecSpecific::FLACSpecificBox(ref flac) => {
+            // Return the STREAMINFO metadata block in the codec_specific.
+            let streaminfo = &flac.blocks[0];
+            if streaminfo.block_type != 0 || streaminfo.data.len() != 34 {
+                return MP4PARSE_ERROR_INVALID;
+            }
+            (*info).codec_specific_config.length = streaminfo.data.len() as u32;
+            (*info).codec_specific_config.data = streaminfo.data.as_ptr();
         }
         AudioCodecSpecific::OpusSpecificBox(ref opus) => {
             let mut v = Vec::new();
@@ -445,6 +493,9 @@ pub unsafe extern fn mp4parse_get_track_audio_info(parser: *mut mp4parse_parser,
                     match header.get(&track_index) {
                         None => {}
                         Some(v) => {
+                            if v.len() > std::u32::MAX as usize {
+                                return MP4PARSE_ERROR_INVALID;
+                            }
                             (*info).codec_specific_config.length = v.len() as u32;
                             (*info).codec_specific_config.data = v.as_ptr();
                         }
@@ -499,6 +550,7 @@ pub unsafe extern fn mp4parse_get_track_video_info(parser: *mut mp4parse_parser,
     MP4PARSE_OK
 }
 
+/// Fill the supplied `mp4parse_fragment_info` with metadata from fragmented file.
 #[no_mangle]
 pub unsafe extern fn mp4parse_get_fragment_info(parser: *mut mp4parse_parser, info: *mut mp4parse_fragment_info) -> mp4parse_error {
     if parser.is_null() || info.is_null() || (*parser).poisoned() {
@@ -525,7 +577,7 @@ pub unsafe extern fn mp4parse_get_fragment_info(parser: *mut mp4parse_parser, in
     MP4PARSE_OK
 }
 
-// A fragmented file needs mvex table and contains no data in stts, stsc, and stco boxes.
+/// A fragmented file needs mvex table and contains no data in stts, stsc, and stco boxes.
 #[no_mangle]
 pub unsafe extern fn mp4parse_is_fragmented(parser: *mut mp4parse_parser, track_id: u32, fragmented: *mut u8) -> mp4parse_error {
     if parser.is_null() || (*parser).poisoned() {
@@ -547,6 +599,41 @@ pub unsafe extern fn mp4parse_is_fragmented(parser: *mut mp4parse_parser, track_
         Some(_) => {},
         None => return MP4PARSE_ERROR_BADARG,
     }
+
+    MP4PARSE_OK
+}
+
+/// Get 'pssh' system id and 'pssh' box content for eme playback.
+///
+/// The data format in 'info' passing to gecko is:
+///   system_id
+///   pssh box size (in native endian)
+///   pssh box content (including header)
+#[no_mangle]
+pub unsafe extern fn mp4parse_get_pssh_info(parser: *mut mp4parse_parser, info: *mut mp4parse_pssh_info) -> mp4parse_error {
+    if parser.is_null() || info.is_null() || (*parser).poisoned() {
+        return MP4PARSE_ERROR_BADARG;
+    }
+
+    let context = (*parser).context_mut();
+    let pssh_data = (*parser).pssh_data_mut();
+    let info: &mut mp4parse_pssh_info = &mut *info;
+
+    pssh_data.clear();
+    for pssh in &context.psshs {
+        let mut data_len = Vec::new();
+        match data_len.write_u32::<byteorder::NativeEndian>(pssh.box_content.len() as u32) {
+            Err(_) => {
+                return MP4PARSE_ERROR_IO;
+            },
+            _ => (),
+        }
+        pssh_data.extend_from_slice(pssh.system_id.as_slice());
+        pssh_data.extend_from_slice(data_len.as_slice());
+        pssh_data.extend_from_slice(pssh.box_content.as_slice());
+    }
+
+    info.data.set_data(&pssh_data);
 
     MP4PARSE_OK
 }
@@ -774,7 +861,7 @@ fn arg_validation_with_data() {
 
         let mut audio = Default::default();
         assert_eq!(MP4PARSE_OK, mp4parse_get_track_audio_info(parser, 1, &mut audio));
-        assert_eq!(audio.channels, 2);
+        assert_eq!(audio.channels, 1);
         assert_eq!(audio.bit_depth, 16);
         assert_eq!(audio.sample_rate, 48000);
 

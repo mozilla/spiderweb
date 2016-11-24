@@ -162,7 +162,7 @@ AudioChannelAgent::InitInternal(nsPIDOMWindowInner* aWindow,
   }
 
   if (NS_WARN_IF(!aWindow)) {
-    return NS_OK;
+    return NS_ERROR_FAILURE;
   }
 
   MOZ_ASSERT(aWindow->IsInnerWindow());
@@ -353,4 +353,17 @@ AudioChannelAgent::WindowAudioCaptureChanged(uint64_t aInnerWindowID,
           "capture = %d\n", this, aCapture));
 
   callback->WindowAudioCaptureChanged(aCapture);
+}
+
+bool
+AudioChannelAgent::IsPlayingStarted() const
+{
+  return mIsRegToService;
+}
+
+bool
+AudioChannelAgent::ShouldBlockMedia() const
+{
+  return mWindow ?
+    mWindow->GetMediaSuspend() == nsISuspendedTypes::SUSPENDED_BLOCK : false;
 }

@@ -29,6 +29,7 @@ import org.mozilla.gecko.SnackbarBuilder;
 import org.mozilla.gecko.Telemetry;
 import org.mozilla.gecko.TelemetryContract;
 import org.mozilla.gecko.TelemetryContract.Method;
+import org.mozilla.gecko.activitystream.ActivityStream;
 import org.mozilla.gecko.background.common.GlobalConstants;
 import org.mozilla.gecko.db.BrowserContract.SuggestedSites;
 import org.mozilla.gecko.feeds.FeedService;
@@ -367,7 +368,7 @@ OnSharedPreferenceChangeListener
         // Use setResourceToOpen to specify these extras.
         Bundle intentExtras = getIntent().getExtras();
 
-        GeckoApp.getEventDispatcher().registerGeckoThreadListener(this,
+        EventDispatcher.getInstance().registerGeckoThreadListener(this,
                                                                   "Sanitize:Finished",
                                                                   "Snackbar:Show");
 
@@ -504,7 +505,7 @@ OnSharedPreferenceChangeListener
     protected void onDestroy() {
         super.onDestroy();
 
-        GeckoApp.getEventDispatcher().unregisterGeckoThreadListener(this,
+        EventDispatcher.getInstance().unregisterGeckoThreadListener(this,
                                                                     "Sanitize:Finished",
                                                                     "Snackbar:Show");
 
@@ -883,7 +884,7 @@ OnSharedPreferenceChangeListener
                     preferences.removePreference(pref);
                     i--;
                     continue;
-                } else if (PREFS_ACTIVITY_STREAM.equals(key) && !AppConstants.MOZ_ANDROID_ACTIVITY_STREAM) {
+                } else if (PREFS_ACTIVITY_STREAM.equals(key) && !ActivityStream.isUserEligible(this)) {
                     preferences.removePreference(pref);
                     i--;
                     continue;

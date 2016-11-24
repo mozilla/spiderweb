@@ -109,14 +109,6 @@ nsConditionalResetStyleData::GetConditionalStyleData(nsStyleStructID aSID,
   return nullptr;
 }
 
-// Creates and returns an imgRequestProxy based on the specified
-// value in aValue.
-static imgRequestProxy*
-GetImageRequest(nsPresContext* aPresContext, const nsCSSValue& aValue)
-{
-  return aValue.GetImageValue(aPresContext->Document());
-}
-
 // Creates an imgRequestProxy based on the specified value in
 // aValue and calls aCallback with it.  If the nsPresContext
 // is static (e.g. for printing), then a static request (i.e.
@@ -128,13 +120,29 @@ SetImageRequest(function<void(imgRequestProxy*)> aCallback,
                 nsPresContext* aPresContext,
                 const nsCSSValue& aValue)
 {
-  imgRequestProxy* req = GetImageRequest(aPresContext, aValue);
-  if (aPresContext->IsDynamic()) {
-    aCallback(req);
-  } else {
-    RefPtr<imgRequestProxy> staticReq = nsContentUtils::GetStaticRequest(req);
-    aCallback(staticReq);
-  }
+  RefPtr<imgRequestProxy> req =
+    aValue.GetPossiblyStaticImageValue(aPresContext->Document(),
+                                       aPresContext);
+  aCallback(req);
+}
+
+static void
+SetStyleImageRequest(function<void(nsStyleImageRequest*)> aCallback,
+                     nsPresContext* aPresContext,
+                     const nsCSSValue& aValue,
+                     nsStyleImageRequest::Mode aModeFlags =
+                       nsStyleImageRequest::Mode::Track)
+{
+  SetImageRequest([&](imgRequestProxy* aProxy) {
+    css::ImageValue* imageValue = aValue.GetImageStructValue();
+    ImageTracker* imageTracker =
+      (aModeFlags & nsStyleImageRequest::Mode::Track)
+      ? aPresContext->Document()->ImageTracker()
+      : nullptr;
+    RefPtr<nsStyleImageRequest> request =
+      new nsStyleImageRequest(aModeFlags, aProxy, imageValue, imageTracker);
+    aCallback(request);
+  }, aPresContext, aValue);
 }
 
 template<typename ReferenceBox>
@@ -308,8 +316,13 @@ static nscoord CalcLengthWith(const nsCSSValue& aValue,
                               RuleNodeCacheConditions& aConditions);
 
 struct CalcLengthCalcOps : public css::BasicCoordCalcOps,
-                           public css::NumbersAlreadyNormalizedOps
+                           public css::FloatCoeffsAlreadyNormalizedOps
 {
+  // Declare that we have floats as coefficients so that we unambiguously
+  // resolve coeff_type (BasicCoordCalcOps and FloatCoeffsAlreadyNormalizedOps
+  // both have |typedef float coeff_type|).
+  typedef float coeff_type;
+
   // All of the parameters to CalcLengthWith except aValue.
   const nscoord mFontSize;
   const nsStyleFont* const mStyleFont;
@@ -648,7 +661,7 @@ nsRuleNode::CalcLengthWithInitialFont(nsPresContext* aPresContext,
                         true, false, conditions);
 }
 
-struct LengthPercentPairCalcOps : public css::NumbersAlreadyNormalizedOps
+struct LengthPercentPairCalcOps : public css::FloatCoeffsAlreadyNormalizedOps
 {
   typedef nsRuleNode::ComputedCalc result_type;
 
@@ -1267,8 +1280,8 @@ static void SetStyleImageToImageRect(nsStyleContext* aStyleContext,
 
   // <uri>
   if (arr->Item(1).GetUnit() == eCSSUnit_Image) {
-    SetImageRequest([&](imgRequestProxy* req) {
-      aResult.SetImageData(req);
+    SetStyleImageRequest([&](nsStyleImageRequest* req) {
+      aResult.SetImageRequest(do_AddRef(req));
     }, aStyleContext->PresContext(), arr->Item(1));
   } else {
     NS_WARNING("nsCSSValue::Image::Image() failed?");
@@ -1303,8 +1316,8 @@ static void SetStyleImage(nsStyleContext* aStyleContext,
 
   switch (aValue.GetUnit()) {
     case eCSSUnit_Image:
-      SetImageRequest([&](imgRequestProxy* req) {
-        aResult.SetImageData(req);
+      SetStyleImageRequest([&](nsStyleImageRequest* req) {
+        aResult.SetImageRequest(do_AddRef(req));
       }, aStyleContext->PresContext(), aValue);
       break;
     case eCSSUnit_Function:
@@ -1345,7 +1358,7 @@ static void SetStyleImage(nsStyleContext* aStyleContext,
       // eCSSUnit_Image here.
 
       // Check #2.
-      bool isLocalRef = aValue.GetURLStructValue()->GetLocalURLFlag();
+      bool isLocalRef = aValue.GetURLStructValue()->IsLocalRef();
 
       // Check #3.
       bool isEqualExceptRef = false;
@@ -1400,6 +1413,10 @@ struct SetEnumValueHelper
   DEFINE_ENUM_CLASS_SETTER(StyleFloatEdge, ContentBox, MarginBox)
   DEFINE_ENUM_CLASS_SETTER(StyleUserFocus, None, SelectMenu)
   DEFINE_ENUM_CLASS_SETTER(StyleUserSelect, None, MozText)
+  DEFINE_ENUM_CLASS_SETTER(StyleUserInput, None, Auto)
+  DEFINE_ENUM_CLASS_SETTER(StyleUserModify, ReadOnly, WriteOnly)
+  DEFINE_ENUM_CLASS_SETTER(StyleWindowDragging, Default, NoDrag)
+  DEFINE_ENUM_CLASS_SETTER(StyleOrient, Inline, Vertical)
 #ifdef MOZ_XUL
   DEFINE_ENUM_CLASS_SETTER(StyleDisplay, None, Popup)
 #else
@@ -3295,8 +3312,13 @@ nsRuleNode::FindNextLargerFontSize(nscoord aFontSize, int32_t aBasePointSize,
 }
 
 struct SetFontSizeCalcOps : public css::BasicCoordCalcOps,
-                            public css::NumbersAlreadyNormalizedOps
+                            public css::FloatCoeffsAlreadyNormalizedOps
 {
+  // Declare that we have floats as coefficients so that we unambiguously
+  // resolve coeff_type (BasicCoordCalcOps and FloatCoeffsAlreadyNormalizedOps
+  // both have |typedef float coeff_type|).
+  typedef float coeff_type;
+
   // The parameters beyond aValue that we need for CalcLengthWith.
   const nscoord mParentSize;
   const nsStyleFont* const mParentFont;
@@ -4426,7 +4448,7 @@ struct LineHeightCalcObj
   bool mIsNumber;
 };
 
-struct SetLineHeightCalcOps : public css::NumbersAlreadyNormalizedOps
+struct SetLineHeightCalcOps : public css::FloatCoeffsAlreadyNormalizedOps
 {
   typedef LineHeightCalcObj result_type;
   nsStyleContext* const mStyleContext;
@@ -4866,7 +4888,7 @@ nsRuleNode::ComputeTextData(void* aStartStruct,
                  webkitTextStrokeWidthValue->GetIntValue() == NS_STYLE_BORDER_WIDTH_THICK,
                  "Unexpected enum value");
     text->mWebkitTextStrokeWidth.SetCoordValue(
-      mPresContext->GetBorderWidthTable()[webkitTextStrokeWidthValue->GetIntValue()]);
+      nsPresContext::GetBorderWidthForKeyword(webkitTextStrokeWidthValue->GetIntValue()));
   } else {
     SetCoord(*webkitTextStrokeWidthValue, text->mWebkitTextStrokeWidth,
              parentText->mWebkitTextStrokeWidth,
@@ -5070,17 +5092,16 @@ nsRuleNode::ComputeUserInterfaceData(void* aStartStruct,
       const nsCSSValueList* list = cursorValue->GetListValue();
       for ( ; list->mValue.GetUnit() == eCSSUnit_Array; list = list->mNext) {
         nsCSSValue::Array* arr = list->mValue.GetArrayValue();
-        imgRequestProxy* req =
-          GetImageRequest(aContext->PresContext(), arr->Item(0));
-        if (req) {
+        SetStyleImageRequest([&](nsStyleImageRequest* req) {
           nsCursorImage* item = ui->mCursorImages.AppendElement();
-          item->SetImage(req);
+          item->mImage = req;
           if (arr->Item(1).GetUnit() != eCSSUnit_Null) {
             item->mHaveHotspot = true;
             item->mHotspotX = arr->Item(1).GetFloatValue();
             item->mHotspotY = arr->Item(2).GetFloatValue();
           }
-        }
+        }, aContext->PresContext(), arr->Item(0),
+           nsStyleImageRequest::Mode::Discard);
       }
 
       NS_ASSERTION(list, "Must have non-array value at the end");
@@ -5095,14 +5116,14 @@ nsRuleNode::ComputeUserInterfaceData(void* aStartStruct,
            ui->mUserInput, conditions,
            SETVAL_ENUMERATED | SETVAL_UNSET_INHERIT,
            parentUI->mUserInput,
-           NS_STYLE_USER_INPUT_AUTO);
+           StyleUserInput::Auto);
 
   // user-modify: enum, inherit, initial
   SetValue(*aRuleData->ValueForUserModify(),
            ui->mUserModify, conditions,
            SETVAL_ENUMERATED | SETVAL_UNSET_INHERIT,
            parentUI->mUserModify,
-           NS_STYLE_USER_MODIFY_READ_ONLY);
+           StyleUserModify::ReadOnly);
 
   // user-focus: enum, inherit, initial
   SetValue(*aRuleData->ValueForUserFocus(),
@@ -5157,7 +5178,7 @@ nsRuleNode::ComputeUIResetData(void* aStartStruct,
            ui->mWindowDragging, conditions,
            SETVAL_ENUMERATED | SETVAL_UNSET_INITIAL,
            parentUI->mWindowDragging,
-           NS_STYLE_WINDOW_DRAGGING_DEFAULT);
+           StyleWindowDragging::Default);
 
   // -moz-window-shadow: enum, inherit, initial
   SetValue(*aRuleData->ValueForWindowShadow(),
@@ -6434,7 +6455,7 @@ nsRuleNode::ComputeDisplayData(void* aStartStruct,
            display->mOrient, conditions,
            SETVAL_ENUMERATED | SETVAL_UNSET_INITIAL,
            parentDisplay->mOrient,
-           NS_STYLE_ORIENT_INLINE);
+           StyleOrient::Inline);
 
   // shape-outside: none | [ <basic-shape> || <shape-box> ] | <image>
   const nsCSSValue* shapeOutsideValue = aRuleData->ValueForShapeOutside();
@@ -6452,7 +6473,7 @@ nsRuleNode::ComputeDisplayData(void* aStartStruct,
       break;
     case eCSSUnit_URL: {
       display->mShapeOutside = StyleShapeOutside();
-      display->mShapeOutside.SetURL(shapeOutsideValue);
+      display->mShapeOutside.SetURL(shapeOutsideValue->GetURLStructValue());
       break;
     }
     case eCSSUnit_Array: {
@@ -6688,18 +6709,25 @@ struct BackgroundItemComputer<nsCSSValueList, nsStyleImage>
 };
 
 template <>
-struct BackgroundItemComputer<nsCSSValueList, FragmentOrURL>
+struct BackgroundItemComputer<nsCSSValueList, RefPtr<css::URLValueData>>
 {
   static void ComputeValue(nsStyleContext* aStyleContext,
                            const nsCSSValueList* aSpecifiedValue,
-                           FragmentOrURL& aComputedValue,
+                           RefPtr<css::URLValueData>& aComputedValue,
                            RuleNodeCacheConditions& aConditions)
   {
-    if (eCSSUnit_Image == aSpecifiedValue->mValue.GetUnit() ||
-        eCSSUnit_URL == aSpecifiedValue->mValue.GetUnit()) {
-      aComputedValue.SetValue(&aSpecifiedValue->mValue);
-    } else if (eCSSUnit_Null != aSpecifiedValue->mValue.GetUnit()) {
-      aComputedValue.SetNull();
+    switch (aSpecifiedValue->mValue.GetUnit()) {
+      case eCSSUnit_Null:
+        break;
+      case eCSSUnit_URL:
+        aComputedValue = aSpecifiedValue->mValue.GetURLStructValue();
+        break;
+      case eCSSUnit_Image:
+        aComputedValue = aSpecifiedValue->mValue.GetImageStructValue();
+        break;
+      default:
+        aComputedValue = nullptr;
+        break;
     }
   }
 };
@@ -7234,7 +7262,7 @@ nsRuleNode::ComputeBackgroundData(void* aStartStruct,
 
   // background-repeat: enum, inherit, initial [pair list]
   nsStyleImageLayers::Repeat initialRepeat;
-  initialRepeat.SetInitialValues(nsStyleImageLayers::LayerType::Background);
+  initialRepeat.SetInitialValues();
   SetImageLayerPairList(aContext, *aRuleData->ValueForBackgroundRepeat(),
                         bg->mImage.mLayers,
                         parentBG->mImage.mLayers,
@@ -7283,9 +7311,7 @@ nsRuleNode::ComputeBackgroundData(void* aStartStruct,
 
   // background-position-x/y: enum, length, percent (flags), inherit [list]
   Position::Coord initialPositionCoord;
-  initialPositionCoord.mPercent =
-    nsStyleImageLayers::GetInitialPositionForLayerType(
-      nsStyleImageLayers::LayerType::Background);
+  initialPositionCoord.mPercent = 0.0f;
   initialPositionCoord.mLength = 0;
   initialPositionCoord.mHasPercent = true;
 
@@ -7320,9 +7346,6 @@ nsRuleNode::ComputeBackgroundData(void* aStartStruct,
   if (rebuild) {
     FillAllBackgroundLists(bg->mImage, maxItemCount);
   }
-
-  // Now that the dust has settled, register the images with the document
-  bg->mImage.TrackImages(aContext->PresContext());
 
   COMPUTE_END_RESET(Background, bg)
 }
@@ -7470,7 +7493,7 @@ nsRuleNode::ComputeBorderData(void* aStartStruct,
                      value.GetIntValue() == NS_STYLE_BORDER_WIDTH_THICK,
                      "Unexpected enum value");
         border->SetBorderWidth(side,
-                               (mPresContext->GetBorderWidthTable())[value.GetIntValue()]);
+          nsPresContext::GetBorderWidthForKeyword(value.GetIntValue()));
       }
       // OK to pass bad aParentCoord since we're not passing SETCOORD_INHERIT
       else if (SetCoord(value, coord, nsStyleCoord(),
@@ -7488,7 +7511,7 @@ nsRuleNode::ComputeBorderData(void* aStartStruct,
       else if (eCSSUnit_Initial == value.GetUnit() ||
                eCSSUnit_Unset == value.GetUnit()) {
         border->SetBorderWidth(side,
-          (mPresContext->GetBorderWidthTable())[NS_STYLE_BORDER_WIDTH_MEDIUM]);
+          nsPresContext::GetBorderWidthForKeyword(NS_STYLE_BORDER_WIDTH_MEDIUM));
       }
       else {
         NS_ASSERTION(eCSSUnit_Null == value.GetUnit(),
@@ -7709,8 +7732,6 @@ nsRuleNode::ComputeBorderData(void* aStartStruct,
            SETVAL_ENUMERATED | SETVAL_UNSET_INITIAL,
            parentBorder->mBorderImageRepeatV,
            NS_STYLE_BORDER_IMAGE_REPEAT_STRETCH);
-
-  border->TrackImage(aContext->PresContext());
 
   COMPUTE_END_RESET(Border, border)
 }
@@ -7944,18 +7965,18 @@ nsRuleNode::ComputeListData(void* aStartStruct,
   // list-style-image: url, none, inherit
   const nsCSSValue* imageValue = aRuleData->ValueForListStyleImage();
   if (eCSSUnit_Image == imageValue->GetUnit()) {
-    SetImageRequest([&](imgRequestProxy* req) {
-      list->SetListStyleImage(req);
-    }, mPresContext, *imageValue);
+    SetStyleImageRequest([&](nsStyleImageRequest* req) {
+      list->mListStyleImage = req;
+    }, mPresContext, *imageValue, nsStyleImageRequest::Mode(0));
   }
   else if (eCSSUnit_None == imageValue->GetUnit() ||
            eCSSUnit_Initial == imageValue->GetUnit()) {
-    list->SetListStyleImage(nullptr);
+    list->mListStyleImage = nullptr;
   }
   else if (eCSSUnit_Inherit == imageValue->GetUnit() ||
            eCSSUnit_Unset == imageValue->GetUnit()) {
     conditions.SetUncacheable();
-    list->SetListStyleImage(parentList->GetListStyleImage());
+    list->mListStyleImage = parentList->mListStyleImage;
   }
 
   // list-style-position: enum, inherit, initial
@@ -8968,17 +8989,12 @@ nsRuleNode::ComputeContentData(void* aStartStruct,
     MOZ_ASSERT(false, "unexpected value unit");
   }
 
-  // marker-offset: length, auto, inherit
-  SetCoord(*aRuleData->ValueForMarkerOffset(), content->mMarkerOffset, parentContent->mMarkerOffset,
-           SETCOORD_LH | SETCOORD_AUTO | SETCOORD_INITIAL_AUTO |
-             SETCOORD_CALC_LENGTH_ONLY | SETCOORD_UNSET_INITIAL,
-           aContext, mPresContext, conditions);
-
   // If we ended up with an image, track it.
   for (uint32_t i = 0; i < content->ContentCount(); ++i) {
     if ((content->ContentAt(i).mType == eStyleContentType_Image) &&
         content->ContentAt(i).mContent.mImage) {
-      content->ContentAt(i).TrackImage(aContext->PresContext());
+      content->ContentAt(i).TrackImage(
+          aContext->PresContext()->Document()->ImageTracker());
     }
   }
 
@@ -9101,7 +9117,7 @@ nsRuleNode::ComputeColumnData(void* aStartStruct,
   if (eCSSUnit_Initial == widthValue.GetUnit() ||
       eCSSUnit_Unset == widthValue.GetUnit()) {
     column->SetColumnRuleWidth(
-        (mPresContext->GetBorderWidthTable())[NS_STYLE_BORDER_WIDTH_MEDIUM]);
+        nsPresContext::GetBorderWidthForKeyword(NS_STYLE_BORDER_WIDTH_MEDIUM));
   }
   else if (eCSSUnit_Enumerated == widthValue.GetUnit()) {
     NS_ASSERTION(widthValue.GetIntValue() == NS_STYLE_BORDER_WIDTH_THIN ||
@@ -9109,7 +9125,7 @@ nsRuleNode::ComputeColumnData(void* aStartStruct,
                  widthValue.GetIntValue() == NS_STYLE_BORDER_WIDTH_THICK,
                  "Unexpected enum value");
     column->SetColumnRuleWidth(
-        (mPresContext->GetBorderWidthTable())[widthValue.GetIntValue()]);
+        nsPresContext::GetBorderWidthForKeyword(widthValue.GetIntValue()));
   }
   else if (eCSSUnit_Inherit == widthValue.GetUnit()) {
     column->SetColumnRuleWidth(parent->GetComputedColumnRuleWidth());
@@ -9168,6 +9184,12 @@ SetSVGPaint(const nsCSSValue& aValue, const nsStyleSVGPaint& parentPaint,
             nsStyleSVGPaint& aResult, nsStyleSVGPaintType aInitialPaintType,
             RuleNodeCacheConditions& aConditions)
 {
+  MOZ_ASSERT(aInitialPaintType == eStyleSVGPaintType_None ||
+             aInitialPaintType == eStyleSVGPaintType_Color,
+             "SetSVGPaint only supports initial values being either 'black' "
+             "(represented by eStyleSVGPaintType_Color) or none (by "
+             "eStyleSVGPaintType_None)");
+
   nscolor color;
 
   if (aValue.GetUnit() == eCSSUnit_Inherit ||
@@ -9175,30 +9197,39 @@ SetSVGPaint(const nsCSSValue& aValue, const nsStyleSVGPaint& parentPaint,
     aResult = parentPaint;
     aConditions.SetUncacheable();
   } else if (aValue.GetUnit() == eCSSUnit_None) {
-    aResult.SetType(eStyleSVGPaintType_None);
+    aResult.SetNone();
   } else if (aValue.GetUnit() == eCSSUnit_Initial) {
-    aResult.SetType(aInitialPaintType);
-    aResult.mPaint.mColor = NS_RGB(0, 0, 0);
-    aResult.mFallbackColor = NS_RGB(0, 0, 0);
+    if (aInitialPaintType == eStyleSVGPaintType_None) {
+      aResult.SetNone();
+    } else {
+      aResult.SetColor(NS_RGB(0, 0, 0));
+    }
   } else if (SetColor(aValue, NS_RGB(0, 0, 0), aPresContext, aContext,
                       color, aConditions)) {
-    aResult.SetType(eStyleSVGPaintType_Color);
-    aResult.mPaint.mColor = color;
+    aResult.SetColor(color);
   } else if (aValue.GetUnit() == eCSSUnit_Pair) {
     const nsCSSValuePair& pair = aValue.GetPairValue();
 
+    nscolor fallback;
+    if (pair.mYValue.GetUnit() == eCSSUnit_None) {
+      fallback = NS_RGBA(0, 0, 0, 0);
+    } else {
+      MOZ_ASSERT(pair.mYValue.GetUnit() != eCSSUnit_Inherit,
+                 "cannot inherit fallback colour");
+      SetColor(pair.mYValue, NS_RGB(0, 0, 0), aPresContext, aContext,
+               fallback, aConditions);
+    }
+
     if (pair.mXValue.GetUnit() == eCSSUnit_URL) {
-      aResult.SetType(eStyleSVGPaintType_Server);
-      aResult.mPaint.mPaintServer = new FragmentOrURL();
-      aResult.mPaint.mPaintServer->SetValue(&pair.mXValue);
+      aResult.SetPaintServer(pair.mXValue.GetURLStructValue(), fallback);
     } else if (pair.mXValue.GetUnit() == eCSSUnit_Enumerated) {
 
       switch (pair.mXValue.GetIntValue()) {
       case NS_COLOR_CONTEXT_FILL:
-        aResult.SetType(eStyleSVGPaintType_ContextFill);
+        aResult.SetContextValue(eStyleSVGPaintType_ContextFill, fallback);
         break;
       case NS_COLOR_CONTEXT_STROKE:
-        aResult.SetType(eStyleSVGPaintType_ContextStroke);
+        aResult.SetContextValue(eStyleSVGPaintType_ContextStroke, fallback);
         break;
       default:
         NS_NOTREACHED("unknown keyword as paint server value");
@@ -9208,14 +9239,6 @@ SetSVGPaint(const nsCSSValue& aValue, const nsStyleSVGPaint& parentPaint,
       NS_NOTREACHED("malformed paint server value");
     }
 
-    if (pair.mYValue.GetUnit() == eCSSUnit_None) {
-      aResult.mFallbackColor = NS_RGBA(0, 0, 0, 0);
-    } else {
-      MOZ_ASSERT(pair.mYValue.GetUnit() != eCSSUnit_Inherit,
-                 "cannot inherit fallback colour");
-      SetColor(pair.mYValue, NS_RGB(0, 0, 0), aPresContext, aContext,
-               aResult.mFallbackColor, aConditions);
-    }
   } else {
     MOZ_ASSERT(aValue.GetUnit() == eCSSUnit_Null,
                "malformed paint server value");
@@ -9351,10 +9374,10 @@ nsRuleNode::ComputeSVGData(void* aStartStruct,
   // marker-end: url, none, inherit
   const nsCSSValue* markerEndValue = aRuleData->ValueForMarkerEnd();
   if (eCSSUnit_URL == markerEndValue->GetUnit()) {
-    svg->mMarkerEnd.SetValue(markerEndValue);
+    svg->mMarkerEnd = markerEndValue->GetURLStructValue();
   } else if (eCSSUnit_None == markerEndValue->GetUnit() ||
              eCSSUnit_Initial == markerEndValue->GetUnit()) {
-    svg->mMarkerEnd.SetNull();
+    svg->mMarkerEnd = nullptr;
   } else if (eCSSUnit_Inherit == markerEndValue->GetUnit() ||
              eCSSUnit_Unset == markerEndValue->GetUnit()) {
     conditions.SetUncacheable();
@@ -9364,10 +9387,10 @@ nsRuleNode::ComputeSVGData(void* aStartStruct,
   // marker-mid: url, none, inherit
   const nsCSSValue* markerMidValue = aRuleData->ValueForMarkerMid();
   if (eCSSUnit_URL == markerMidValue->GetUnit()) {
-    svg->mMarkerMid.SetValue(markerMidValue);
+    svg->mMarkerMid = markerMidValue->GetURLStructValue();
   } else if (eCSSUnit_None == markerMidValue->GetUnit() ||
              eCSSUnit_Initial == markerMidValue->GetUnit()) {
-    svg->mMarkerMid.SetNull();
+    svg->mMarkerMid = nullptr;
   } else if (eCSSUnit_Inherit == markerMidValue->GetUnit() ||
              eCSSUnit_Unset == markerMidValue->GetUnit()) {
     conditions.SetUncacheable();
@@ -9377,10 +9400,10 @@ nsRuleNode::ComputeSVGData(void* aStartStruct,
   // marker-start: url, none, inherit
   const nsCSSValue* markerStartValue = aRuleData->ValueForMarkerStart();
   if (eCSSUnit_URL == markerStartValue->GetUnit()) {
-    svg->mMarkerStart.SetValue(markerStartValue);
+    svg->mMarkerStart = markerStartValue->GetURLStructValue();
   } else if (eCSSUnit_None == markerStartValue->GetUnit() ||
              eCSSUnit_Initial == markerStartValue->GetUnit()) {
-    svg->mMarkerStart.SetNull();
+    svg->mMarkerStart = nullptr;
   } else if (eCSSUnit_Inherit == markerStartValue->GetUnit() ||
              eCSSUnit_Unset == markerStartValue->GetUnit()) {
     conditions.SetUncacheable();
@@ -9759,7 +9782,7 @@ SetStyleFilterToCSSValue(nsStyleFilter* aStyleFilter,
 {
   nsCSSUnit unit = aValue.GetUnit();
   if (unit == eCSSUnit_URL) {
-    return aStyleFilter->SetURL(&aValue);
+    return aStyleFilter->SetURL(aValue.GetURLStructValue());
   }
 
   MOZ_ASSERT(unit == eCSSUnit_Function, "expected a filter function");
@@ -9865,7 +9888,7 @@ nsRuleNode::ComputeSVGResetData(void* aStartStruct,
       break;
     case eCSSUnit_URL: {
       svgReset->mClipPath = StyleClipPath();
-      svgReset->mClipPath.SetURL(clipPathValue);
+      svgReset->mClipPath.SetURL(clipPathValue->GetURLStructValue());
       break;
     }
     case eCSSUnit_Array: {
@@ -9931,13 +9954,14 @@ nsRuleNode::ComputeSVGResetData(void* aStartStruct,
                     svgReset->mMask.mLayers,
                     parentSVGReset->mMask.mLayers,
                     &nsStyleImageLayers::Layer::mSourceURI,
-                    FragmentOrURL(), parentSVGReset->mMask.mImageCount,
+                    RefPtr<css::URLValueData>(),
+                    parentSVGReset->mMask.mImageCount,
                     svgReset->mMask.mImageCount,
                     maxItemCount, rebuild, conditions);
 
   // mask-repeat: enum, inherit, initial [pair list]
   nsStyleImageLayers::Repeat initialRepeat;
-  initialRepeat.SetInitialValues(nsStyleImageLayers::LayerType::Mask);
+  initialRepeat.SetInitialValues();
   SetImageLayerPairList(aContext, *aRuleData->ValueForMaskRepeat(),
                         svgReset->mMask.mLayers,
                         parentSVGReset->mMask.mLayers,
@@ -9968,9 +9992,7 @@ nsRuleNode::ComputeSVGResetData(void* aStartStruct,
 
   // mask-position-x/y: enum, length, percent (flags), inherit [list]
   Position::Coord initialPositionCoord;
-  initialPositionCoord.mPercent =
-    nsStyleImageLayers::GetInitialPositionForLayerType(
-      nsStyleImageLayers::LayerType::Mask);
+  initialPositionCoord.mPercent = 0.0f;
   initialPositionCoord.mLength = 0;
   initialPositionCoord.mHasPercent = true;
 
@@ -10027,19 +10049,17 @@ nsRuleNode::ComputeSVGResetData(void* aStartStruct,
   // mask: none | <url>
   const nsCSSValue* maskValue = aRuleData->ValueForMask();
   if (eCSSUnit_URL == maskValue->GetUnit()) {
-    svgReset->mMask.mLayers[0].mSourceURI.SetValue(maskValue);
+    svgReset->mMask.mLayers[0].mSourceURI = maskValue->GetURLStructValue();
   } else if (eCSSUnit_None == maskValue->GetUnit() ||
              eCSSUnit_Initial == maskValue->GetUnit() ||
              eCSSUnit_Unset == maskValue->GetUnit()) {
-    svgReset->mMask.mLayers[0].mSourceURI.SetNull();
+    svgReset->mMask.mLayers[0].mSourceURI = nullptr;
   } else if (eCSSUnit_Inherit == maskValue->GetUnit()) {
     conditions.SetUncacheable();
     svgReset->mMask.mLayers[0].mSourceURI =
       parentSVGReset->mMask.mLayers[0].mSourceURI;
   }
 #endif
-
-  svgReset->mMask.TrackImages(aContext->PresContext());
 
   COMPUTE_END_RESET(SVGReset, svgReset)
 }

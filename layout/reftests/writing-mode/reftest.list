@@ -18,8 +18,8 @@ fuzzy-if(gtkWidget,255,2) fuzzy-if(winWidget||Android,4,8704) HTTP(..) == 108384
 == 1090168-2.html 1090168-2-ref.html
 fuzzy-if(azureSkia,255,2700) == 1090168-3.html 1090168-3-ref.html # bug 1230357 mark fuzzy for skia.
 == 1091058-1.html 1091058-1-ref.html
-random-if(gtkWidget) == 1094434-1.html 1094434-1-ref.html # bug 1094845
-random-if(gtkWidget) == 1094434-2.html 1094434-2-ref.html # bug 1094845
+== 1094434-1.html 1094434-1-ref.html
+== 1094434-2.html 1094434-2-ref.html
 == 1094914-1a.html 1094914-1-ref.html
 == 1094914-1b.html 1094914-1-ref.html
 == 1096224-1a.html 1096224-1-ref.html
@@ -65,7 +65,7 @@ fuzzy(116,94) fuzzy-if(skiaContent&&dwrite,119,124) HTTP(..) == 1115916-1-vertic
 skip-if(Android||(winWidget&&!/^Windows\x20NT\x205\.1/.test(http.oscpu))) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1a-ref.html
 skip-if(!(Android)) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1b-ref.html
 skip-if(!winWidget||/^Windows\x20NT\x205\.1/.test(http.oscpu)) == ua-style-sheet-textarea-1.html ua-style-sheet-textarea-1c-ref.html
-== ua-style-sheet-checkbox-radio-1.html ua-style-sheet-checkbox-radio-1-ref.html
+fuzzy-if(Android,1,15) == ua-style-sheet-checkbox-radio-1.html ua-style-sheet-checkbox-radio-1-ref.html
 skip-if(Android) fuzzy-if(skiaContent&&!Android,2,6) == ua-style-sheet-button-1.html ua-style-sheet-button-1a-ref.html
 skip-if(!(Android)) == ua-style-sheet-button-1.html ua-style-sheet-button-1b-ref.html
 == ua-style-sheet-input-color-1.html ua-style-sheet-input-color-1-ref.html

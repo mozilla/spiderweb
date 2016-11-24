@@ -201,14 +201,6 @@ function promise_page(aWindow, aPageId) {
   return deferred.promise;
 }
 
-function get_list_names(aList) {
-  var items = [];
-  for (let listItem of aList.childNodes)
-    items.push(listItem.label);
-  items.sort();
-  return items;
-}
-
 // These add-ons became inactive during the upgrade
 var inactiveAddonIds = [
   ao5.id,
@@ -278,7 +270,7 @@ add_task(function* cancel_during_repopulate() {
   let getInstalls = Promise.defer();
   AddonManager.getAllInstalls(getInstalls.resolve);
   let installs = yield getInstalls.promise;
-  is (installs.length, 0, "There should be no active installs after background installs are done");
+  is(installs.length, 0, "There should be no active installs after background installs are done");
 
   // addon8 should have updated in the background,
   // addon9 was listed as previously disabled so it should not have updated
@@ -347,7 +339,7 @@ add_task(function* cancel_during_findUpdates() {
   let getInstalls = Promise.defer();
   AddonManager.getAllInstalls(getInstalls.resolve);
   let installs = yield getInstalls.promise;
-  is (installs.length, 0, "There should be no active installs after the dialog is cancelled 2");
+  is(installs.length, 0, "There should be no active installs after the dialog is cancelled 2");
 
   info("findUpdates done");
   yield promise_uninstall_test_addons();

@@ -9,7 +9,6 @@
 
 #include "nsCOMPtr.h"
 #include "nsIObserver.h"
-#include "nsTObserverArray.h"
 #include "PresentationServiceBase.h"
 #include "PresentationSessionInfo.h"
 
@@ -46,12 +45,11 @@ private:
 
   virtual ~PresentationService();
   void HandleShutdown();
-  nsresult HandleDeviceChange();
+  nsresult HandleDeviceAdded(nsIPresentationDevice* aDevice);
+  nsresult HandleDeviceRemoved();
   nsresult HandleSessionRequest(nsIPresentationSessionRequest* aRequest);
   nsresult HandleTerminateRequest(nsIPresentationTerminateRequest* aRequest);
   nsresult HandleReconnectRequest(nsIPresentationSessionRequest* aRequest);
-  void NotifyAvailableChange(bool aIsAvailable);
-  bool IsAppInstalled(nsIURI* aUri);
 
   // This is meant to be called by PresentationDeviceRequest.
   already_AddRefed<PresentationSessionInfo>
@@ -59,8 +57,9 @@ private:
                                const nsAString& aSessionId,
                                uint64_t aWindowId);
 
-  bool mIsAvailable;
-  nsTObserverArray<nsCOMPtr<nsIPresentationAvailabilityListener>> mAvailabilityListeners;
+  // Emumerate all devices to get the availability of each input Urls.
+  nsresult UpdateAvailabilityUrlChange(
+                                  const nsTArray<nsString>& aAvailabilityUrls);
 };
 
 } // namespace dom
