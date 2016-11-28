@@ -73,7 +73,7 @@ NodeChild::Init(base::ProcessId aParentPid,
     return false;
   }
 
-  return SendPing();
+  return true;
 }
 
 bool
@@ -98,13 +98,6 @@ bool
 NodeChild::RecvMessage(const nsCString& aMessage)
 {
   NodeBindings::Instance()->RecvMessage(ToNewCString(aMessage));
-  return true;
-}
-
-bool
-NodeChild::RecvPong()
-{
-  printf("Pong!\n");
   return true;
 }
 

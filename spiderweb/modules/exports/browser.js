@@ -2,18 +2,28 @@ const EventEmitter = require('events');
 const assert = require('assert');
 const webExtension = process.binding('web_extension');
 
-let globalPortId = 1;
 const openPorts = new Map();
+const connectEmitter = new EventEmitter();
 
 webExtension.setRecvMessageCallback((message) => {
   message = JSON.parse(message);
+  let type = message.type;
   let portId = message.portId;
-  let port = openPorts.get(portId);
-  assert(port, 'Open port for ' + portId);
-  port.emitter.emit('message', message.message);
+  switch (type) {
+    case 'message':
+      let port = openPorts.get(portId);
+      assert(port, 'Open port for ' + portId);
+      port.emitter.emit('message', message.message);
+      break;
+    case 'connect':
+      connectEmitter.emit('connect', new Port(portId, 'runtime'));
+      break;
+    default:
+      throw new Error('Bad event type ' + type);
+  }
 });
 
-// Emulate Chromium's Event object.
+// Emulate Chromium's Event object using a node EventEmitter.
 // TODO: there's a lot more here https://developer.chrome.com/apps/events#type-Event
 class Event {
   constructor(name, emitter) {
@@ -51,8 +61,4 @@ class Port {
   }
 }
 
-exports.runtime = {
-  connect: function () {
-    return new Port(globalPortId++, 'runtime');
-  }
-};
+exports.onConnect = new Event('connect', connectEmitter);

@@ -11,11 +11,7 @@ async protocol PNode
 both:
   async Message(nsCString aMessage);
 
-parent:
-  async Ping();
-
 child:
-  async Pong();
   async StartNode(nsCString[] aInitArgs, nsCString aICUDataDir);
 
 };

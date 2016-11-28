@@ -19,6 +19,7 @@ SOURCES += [
   'modules/WebExtension.cpp',
   'NodeBindings.cpp',
   'NodeChild.cpp',
+  'NodeLoader.cpp',
 ]
 
 if CONFIG['OS_ARCH'] == 'Darwin':
@@ -33,6 +34,12 @@ if CONFIG['OS_ARCH'] == 'Linux':
 
 IPDL_SOURCES += [
   'PNode.ipdl',
+]
+
+XPIDL_MODULE = 'spiderweb'
+
+XPIDL_SOURCES += [
+  'nsINodeLoader.idl',
 ]
 
 EXTRA_JS_MODULES.spiderweb += [

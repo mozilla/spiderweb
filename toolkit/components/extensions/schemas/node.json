@@ -4,11 +4,15 @@
     "description": "Use the <code>browser.node</code> API to start and communicate with a Node process.",
     "functions": [
       {
-        "name": "start",
+        "name": "connect",
         "type": "function",
-        "description": "Starts a Node process.",
+        "description": "Connects to a Node process. If the process has not been started already one will be created.",
         "permissions": ["node"],
-        "parameters": []
+        "parameters": [],
+        "returns": {
+          "$ref": "Port",
+          "description": "Port through which messages can be sent and received with Node"
+        }
       }
     ]
   }

@@ -1,0 +1,18 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
+#include "nsISupports.idl"
+
+[scriptable, function, uuid(af657b2b-6113-4c58-95a8-9cea7b7c1a40)]
+interface nsINodeObserver : nsISupports {
+  void onMessage(in ACString msg);
+};
+
+[scriptable, uuid(93251ddf-5e85-4172-ac2a-31780562974a)]
+interface nsINodeLoader : nsISupports {
+  [implicit_jscontext] void start(in ACString script, in nsINodeObserver observer);
+  [implicit_jscontext] void postMessage(in ACString msg);
+};
+

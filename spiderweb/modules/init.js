@@ -36,5 +36,5 @@ globalPaths.push(path.join(__dirname, 'exports'))
 // TODO: in the future the path to the script should probably come from the
 // parent process as an absolute path. Temporarily for testing resolve it
 // relative to the working directory.
-const mainStartupScript = path.join(process.cwd(), process.argv[2]);
+const mainStartupScript = process.argv[2];
 Module._load(mainStartupScript, Module, true)

@@ -13,7 +13,6 @@ namespace node {
 class NodeChild : public PNodeChild
 {
 public:
-  virtual bool RecvPong();
   virtual bool RecvStartNode(nsTArray<nsCString>&& aInitArgs,
                              const nsCString& aICUDataDir);
   virtual bool RecvMessage(const nsCString& aMessage);
@@ -24,8 +23,6 @@ public:
   bool Init(base::ProcessId aParentPid,
             MessageLoop* aIOLoop,
             IPC::Channel* aChannel);
-
-  void Pong() {};
 
 private:
 

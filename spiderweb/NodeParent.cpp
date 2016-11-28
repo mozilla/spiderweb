@@ -8,6 +8,7 @@
 #include "nsDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsString.h"
+#include "nsINodeLoader.h"
 
 #if EXPOSE_INTL_API
 #include "unicode/putil.h"
@@ -16,8 +17,10 @@
 namespace mozilla {
 namespace node {
 
-NodeParent::NodeParent()
-  : mProcess(nullptr)
+NodeParent::NodeParent(const nsACString& script, nsINodeObserver* observer)
+  : mProcess(nullptr),
+    mNodeObserver(observer),
+    mScript(script)
 {
   MOZ_COUNT_CTOR(NodeParent);
 }
@@ -53,25 +56,6 @@ NodeParent::LaunchProcess()
     return NS_ERROR_FAILURE;
   }
 
-  return NS_OK;
-}
-
-void
-NodeParent::DeleteProcess()
-{
-  Close();
-
-  mProcess->Delete();
-  mProcess = nullptr;
-}
-
-bool
-NodeParent::RecvPing()
-{
-  printf("Ping!\n ");
-
-  // TODO move the node init code out of Ping
-
   // Spidernode needs the path to the ICU data.
 #if EXPOSE_INTL_API && defined(MOZ_ICU_DATA_ARCHIVE)
   nsAutoCString icuDataPath(u_getDataDirectory());
@@ -94,21 +78,27 @@ NodeParent::RecvPing()
   nsTArray<nsCString> args;
   args.AppendElement(NS_LITERAL_CSTRING("node"));
   args.AppendElement(NS_LossyConvertUTF16toASCII(initScript));
-  // TODO remove hardcoded init script and use value from extension
-  args.AppendElement(NS_LITERAL_CSTRING("test.js"));
+  args.AppendElement(mScript);
   if (!SendStartNode(args, icuDataPath)) {
-    return false;
+    return NS_ERROR_FAILURE;
   }
-  return SendPong();
+
+  return NS_OK;
+}
+
+void
+NodeParent::DeleteProcess()
+{
+  Close();
+
+  mProcess->Delete();
+  mProcess = nullptr;
 }
 
 bool
 NodeParent::RecvMessage(const nsCString& aMessage)
 {
-  // TODO: remove this hardcoded testing string and wire up extension
-  if (!SendMessage(NS_LITERAL_CSTRING("{\"portId\": 1, \"message\": \"node parent responding\"}"))) {
-    return false;
-  }
+  mNodeObserver->OnMessage(aMessage);
   return true;
 }
 
