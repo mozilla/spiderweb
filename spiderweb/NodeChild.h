@@ -13,7 +13,9 @@ namespace node {
 class NodeChild : public PNodeChild
 {
 public:
-  virtual mozilla::ipc::IPCResult RecvPong();
+  virtual mozilla::ipc::IPCResult RecvStartNode(nsTArray<nsCString>&& aInitArgs,
+                                                const nsCString& aICUDataDir);
+  virtual mozilla::ipc::IPCResult RecvMessage(const nsCString& aMessage);
 
   MOZ_IMPLICIT NodeChild();
   virtual ~NodeChild();
@@ -21,8 +23,6 @@ public:
   bool Init(base::ProcessId aParentPid,
             MessageLoop* aIOLoop,
             IPC::Channel* aChannel);
-
-  void Pong() {};
 
 private:
 

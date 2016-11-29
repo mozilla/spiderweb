@@ -4,6 +4,7 @@ category webextension-scripts backgroundPage chrome://extensions/content/ext-bac
 category webextension-scripts cookies chrome://extensions/content/ext-cookies.js
 category webextension-scripts downloads chrome://extensions/content/ext-downloads.js
 category webextension-scripts management chrome://extensions/content/ext-management.js
+category webextension-scripts node chrome://extensions/content/ext-node.js
 category webextension-scripts notifications chrome://extensions/content/ext-notifications.js
 category webextension-scripts i18n chrome://extensions/content/ext-i18n.js
 category webextension-scripts idle chrome://extensions/content/ext-idle.js
@@ -53,6 +54,7 @@ category webextension-schemas identity chrome://extensions/content/schemas/ident
 category webextension-schemas idle chrome://extensions/content/schemas/idle.json
 category webextension-schemas management chrome://extensions/content/schemas/management.json
 category webextension-schemas native_host_manifest chrome://extensions/content/schemas/native_host_manifest.json
+category webextension-schemas node chrome://extensions/content/schemas/node.json
 category webextension-schemas notifications chrome://extensions/content/schemas/notifications.json
 category webextension-schemas runtime chrome://extensions/content/schemas/runtime.json
 category webextension-schemas storage chrome://extensions/content/schemas/storage.json

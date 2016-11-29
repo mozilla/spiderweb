@@ -187,8 +187,7 @@ private:
 
   enum class BinaryPathType {
     Self,
-    PluginContainer,
-    Node
+    PluginContainer
   };
 
   static BinaryPathType GetPathToBinary(FilePath& exePath, GeckoProcessType processType);

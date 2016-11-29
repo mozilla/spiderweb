@@ -8,13 +8,15 @@
 #include "NodeProcessParent.h"
 #include "mozilla/node/PNodeParent.h"
 
+class nsINodeObserver;
+
 namespace mozilla {
 namespace node {
 
 class NodeParent : public PNodeParent
 {
 public:
-  NodeParent();
+  NodeParent(const nsACString& script, nsINodeObserver* observer);
   virtual ~NodeParent();
 
   void
@@ -28,9 +30,11 @@ public:
 
 private:
   NodeProcessParent* mProcess;
+  nsCOMPtr<nsINodeObserver> mNodeObserver;
+  nsCString mScript;
 
   virtual mozilla::ipc::IPCResult
-  RecvPing();
+  RecvMessage(const nsCString& aMessage);
 
   virtual void
   ActorDestroy(ActorDestroyReason aWhy);

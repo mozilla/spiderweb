@@ -123,6 +123,12 @@
             "optional": true
           },
 
+          "node": {
+            "type": "string",
+            "optional": true,
+            "format": "strictRelativeUrl"
+          },
+
           "options_ui": {
             "type": "object",
 
@@ -213,6 +219,7 @@
               "alarms",
               "clipboardWrite",
               "idle",
+              "node",
               "notifications",
               "storage"
             ]

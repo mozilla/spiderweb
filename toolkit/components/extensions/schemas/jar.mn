@@ -19,6 +19,7 @@ toolkit.jar:
     content/extensions/schemas/management.json
     content/extensions/schemas/manifest.json
     content/extensions/schemas/native_host_manifest.json
+    content/extensions/schemas/node.json
     content/extensions/schemas/notifications.json
     content/extensions/schemas/runtime.json
     content/extensions/schemas/storage.json
