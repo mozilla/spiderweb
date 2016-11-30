@@ -1451,7 +1451,7 @@ BuildTextRuns(DrawTarget* aDrawTarget, nsTextFrame* aForFrame,
     NS_ASSERTION(backIterator.GetContainer() == block,
                  "Someone lied to us about the block");
   }
-  nsBlockFrame::line_iterator startLine = backIterator.GetLine();
+  nsBlockFrame::LineIterator startLine = backIterator.GetLine();
 
   // Find a line where we can start building text runs. We choose the last line
   // where:
@@ -1473,7 +1473,7 @@ BuildTextRuns(DrawTarget* aDrawTarget, nsTextFrame* aForFrame,
   bool mayBeginInTextRun = true;
   while (true) {
     forwardIterator = backIterator;
-    nsBlockFrame::line_iterator line = backIterator.GetLine();
+    nsBlockFrame::LineIterator line = backIterator.GetLine();
     if (!backIterator.Prev() || backIterator.GetLine()->IsBlock()) {
       mayBeginInTextRun = false;
       break;
@@ -1519,7 +1519,7 @@ BuildTextRuns(DrawTarget* aDrawTarget, nsTextFrame* aForFrame,
   bool seenStartLine = false;
   uint32_t linesAfterStartLine = 0;
   do {
-    nsBlockFrame::line_iterator line = forwardIterator.GetLine();
+    nsBlockFrame::LineIterator line = forwardIterator.GetLine();
     if (line->IsBlock())
       break;
     line->SetInvalidateTextRuns(false);
@@ -3735,7 +3735,7 @@ nsTextPaintStyle::GetTextColor()
       return NS_SAME_AS_FOREGROUND_COLOR;
 
     const nsStyleSVG* style = mFrame->StyleSVG();
-    switch (style->mFill.mType) {
+    switch (style->mFill.Type()) {
       case eStyleSVGPaintType_None:
         return NS_RGBA(0, 0, 0, 0);
       case eStyleSVGPaintType_Color:
@@ -5093,9 +5093,9 @@ LazyGetLineBaselineOffset(nsIFrame* aChildFrame, nsBlockFrame* aBlockFrame)
     nsIFrame::LineBaselineOffset(), &offsetFound);
 
   if (!offsetFound) {
-    for (nsBlockFrame::line_iterator line = aBlockFrame->begin_lines(),
-        line_end = aBlockFrame->end_lines();
-        line != line_end; line++) {
+    for (nsBlockFrame::LineIterator line = aBlockFrame->LinesBegin(),
+                                    line_end = aBlockFrame->LinesEnd();
+         line != line_end; line++) {
       if (line->IsInline()) {
         int32_t n = line->GetChildCount();
         nscoord lineBaseline = line->BStart() + line->GetLogicalAscent();
@@ -5333,16 +5333,17 @@ GenerateTextRunForEmphasisMarks(nsTextFrame* aFrame,
 }
 
 static nsRubyFrame*
-FindRubyAncestor(nsTextFrame* aFrame)
+FindFurthestInlineRubyAncestor(nsTextFrame* aFrame)
 {
+  nsRubyFrame* rubyFrame = nullptr;
   for (nsIFrame* frame = aFrame->GetParent();
        frame && frame->IsFrameOfType(nsIFrame::eLineParticipant);
        frame = frame->GetParent()) {
     if (frame->GetType() == nsGkAtoms::rubyFrame) {
-      return static_cast<nsRubyFrame*>(frame);
+      rubyFrame = static_cast<nsRubyFrame*>(frame);
     }
   }
-  return nullptr;
+  return rubyFrame;
 }
 
 nsRect
@@ -5384,18 +5385,17 @@ nsTextFrame::UpdateTextEmphasis(WritingMode aWM, PropertyProvider& aProvider)
   nscoord absOffset = (side == eLogicalSideBStart) != aWM.IsLineInverted() ?
     baseFontMetrics->MaxAscent() + fm->MaxDescent() :
     baseFontMetrics->MaxDescent() + fm->MaxAscent();
-  nscoord startLeading = 0;
-  nscoord endLeading = 0;
-  if (nsRubyFrame* ruby = FindRubyAncestor(this)) {
-    ruby->GetBlockLeadings(startLeading, endLeading);
+  RubyBlockLeadings leadings;
+  if (nsRubyFrame* ruby = FindFurthestInlineRubyAncestor(this)) {
+    leadings = ruby->GetBlockLeadings();
   }
   if (side == eLogicalSideBStart) {
-    info->baselineOffset = -absOffset - startLeading;
-    overflowRect.BStart(aWM) = -overflowRect.BSize(aWM) - startLeading;
+    info->baselineOffset = -absOffset - leadings.mStart;
+    overflowRect.BStart(aWM) = -overflowRect.BSize(aWM) - leadings.mStart;
   } else {
     MOZ_ASSERT(side == eLogicalSideBEnd);
-    info->baselineOffset = absOffset + endLeading;
-    overflowRect.BStart(aWM) = frameSize.BSize(aWM) + endLeading;
+    info->baselineOffset = absOffset + leadings.mEnd;
+    overflowRect.BStart(aWM) = frameSize.BSize(aWM) + leadings.mEnd;
   }
   // If text combined, fix the gap between the text frame and its parent.
   if (isTextCombined) {
@@ -6477,8 +6477,8 @@ nsTextFrame::GetCaretColorAt(int32_t aOffset)
   bool isSolidTextColor = true;
   if (IsSVGText()) {
     const nsStyleSVG* style = StyleSVG();
-    if (style->mFill.mType != eStyleSVGPaintType_None &&
-        style->mFill.mType != eStyleSVGPaintType_Color) {
+    if (style->mFill.Type() != eStyleSVGPaintType_None &&
+        style->mFill.Type() != eStyleSVGPaintType_Color) {
       isSolidTextColor = false;
     }
   }
@@ -9634,17 +9634,10 @@ static void TransformChars(nsTextFrame* aFrame, const nsStyleText* aStyle,
 }
 
 static bool
-LineEndsInHardLineBreak(nsTextFrame* aFrame)
+LineEndsInHardLineBreak(nsTextFrame* aFrame, nsBlockFrame* aLineContainer)
 {
-  nsIFrame* lineContainer = FindLineContainer(aFrame);
-  nsBlockFrame* block = do_QueryFrame(lineContainer);
-  if (!block) {
-    // Weird situation where we have a line layout without a block.
-    // No soft breaks occur in this situation.
-    return true;
-  }
   bool foundValidLine;
-  nsBlockInFlowLineIterator iter(block, aFrame, &foundValidLine);
+  nsBlockInFlowLineIterator iter(aLineContainer, aFrame, &foundValidLine);
   if (!foundValidLine) {
     NS_ERROR("Invalid line!");
     return true;
@@ -9662,11 +9655,13 @@ nsTextFrame::GetRenderedText(uint32_t aStartOffset,
 
   // The handling of offsets could be more efficient...
   RenderedText result;
+  nsBlockFrame* lineContainer = nullptr;
   nsTextFrame* textFrame;
   const nsTextFragment* textFrag = mContent->GetText();
   uint32_t offsetInRenderedString = 0;
   bool haveOffsets = false;
 
+  Maybe<nsBlockFrame::AutoLineCursorSetup> autoLineCursor;
   for (textFrame = this; textFrame;
        textFrame = static_cast<nsTextFrame*>(textFrame->GetNextContinuation())) {
     if (textFrame->GetStateBits() & NS_FRAME_IS_DIRTY) {
@@ -9682,10 +9677,30 @@ nsTextFrame::GetRenderedText(uint32_t aStartOffset,
     }
     gfxSkipCharsIterator tmpIter = iter;
 
+    // Whether we need to trim whitespaces after the text frame.
+    bool trimAfter;
+    if (!textFrame->IsAtEndOfLine() ||
+        aTrimTrailingWhitespace !=
+          TrailingWhitespace::TRIM_TRAILING_WHITESPACE) {
+      trimAfter = false;
+    } else if (nsBlockFrame* thisLc =
+               do_QueryFrame(FindLineContainer(textFrame))) {
+      if (thisLc != lineContainer) {
+        // Setup line cursor when needed.
+        lineContainer = thisLc;
+        autoLineCursor.reset();
+        autoLineCursor.emplace(lineContainer);
+      }
+      trimAfter = LineEndsInHardLineBreak(textFrame, lineContainer);
+    } else {
+      // Weird situation where we have a line layout without a block.
+      // No soft breaks occur in this situation.
+      trimAfter = true;
+    }
+
     // Skip to the start of the text run, past ignored chars at start of line
-    TrimmedOffsets trimmedOffsets = textFrame->GetTrimmedOffsets(textFrag,
-       textFrame->IsAtEndOfLine() && LineEndsInHardLineBreak(textFrame) &&
-       aTrimTrailingWhitespace == TrailingWhitespace::TRIM_TRAILING_WHITESPACE);
+    TrimmedOffsets trimmedOffsets =
+        textFrame->GetTrimmedOffsets(textFrag, trimAfter);
     bool trimmedSignificantNewline =
         trimmedOffsets.GetEnd() < GetContentEnd() &&
         HasSignificantTerminalNewline();

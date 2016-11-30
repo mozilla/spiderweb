@@ -6,7 +6,6 @@
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/ImageBridgeChild.h"
-#include "mozilla/layers/SharedBufferManagerChild.h"
 #include "mozilla/layers/ISurfaceAllocator.h"     // for GfxMemoryImageReporter
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUProcessManager.h"
@@ -97,10 +96,6 @@
 #include "TexturePoolOGL.h"
 #endif
 
-#ifdef MOZ_WIDGET_GONK
-#include "mozilla/layers/GrallocTextureHost.h"
-#endif
-
 #ifdef USE_SKIA
 # ifdef __GNUC__
 #  pragma GCC diagnostic push
@@ -147,9 +142,6 @@ class mozilla::gl::SkiaGLGlue : public GenericAtomicRefCounted {
 
 namespace mozilla {
 namespace layers {
-#ifdef MOZ_WIDGET_GONK
-void InitGralloc();
-#endif
 void ShutdownTileCache();
 } // namespace layers
 } // namespace mozilla
@@ -186,7 +178,7 @@ using namespace mozilla::gfx;
 class SRGBOverrideObserver final : public nsIObserver,
                                    public nsSupportsWeakReference
 {
-    ~SRGBOverrideObserver() {}
+    ~SRGBOverrideObserver() = default;
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
@@ -203,11 +195,11 @@ class CrashStatsLogForwarder: public mozilla::gfx::LogForwarder
 {
 public:
   explicit CrashStatsLogForwarder(const char* aKey);
-  virtual void Log(const std::string& aString) override;
-  virtual void CrashAction(LogReason aReason) override;
-  virtual bool UpdateStringsVector(const std::string& aString) override;
+  void Log(const std::string& aString) override;
+  void CrashAction(LogReason aReason) override;
+  bool UpdateStringsVector(const std::string& aString) override;
 
-  virtual LoggingRecord LoggingRecordCopy() override;
+  LoggingRecord LoggingRecordCopy() override;
 
   void SetCircularBufferSize(uint32_t aCapacity);
 
@@ -297,8 +289,8 @@ void CrashStatsLogForwarder::UpdateCrashReport()
     break;
   }
 
-  for (LoggingRecord::iterator it = mBuffer.begin(); it != mBuffer.end(); ++it) {
-    message << logAnnotation << Get<0>(*it) << "]" << Get<1>(*it) << " (t=" << Get<2>(*it) << ") ";
+  for (auto& it : mBuffer) {
+    message << logAnnotation << Get<0>(it) << "]" << Get<1>(it) << " (t=" << Get<2>(it) << ") ";
   }
 
 #ifdef MOZ_CRASHREPORTER
@@ -315,7 +307,7 @@ void CrashStatsLogForwarder::UpdateCrashReport()
 
 class LogForwarderEvent : public Runnable
 {
-  virtual ~LogForwarderEvent() {}
+  ~LogForwarderEvent() override = default;
 
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -369,7 +361,7 @@ void CrashStatsLogForwarder::Log(const std::string& aString)
 
 class CrashTelemetryEvent : public Runnable
 {
-  virtual ~CrashTelemetryEvent() {}
+  ~CrashTelemetryEvent() override = default;
 
   NS_DECL_ISUPPORTS_INHERITED
 
@@ -455,7 +447,7 @@ static const char* kObservedPrefs[] = {
 
 class FontPrefsObserver final : public nsIObserver
 {
-    ~FontPrefsObserver() {}
+    ~FontPrefsObserver() = default;
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
@@ -480,7 +472,7 @@ FontPrefsObserver::Observe(nsISupports *aSubject,
 
 class MemoryPressureObserver final : public nsIObserver
 {
-    ~MemoryPressureObserver() {}
+    ~MemoryPressureObserver() = default;
 public:
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
@@ -607,7 +599,9 @@ static uint32_t GetSkiaGlyphCacheSize()
 void
 gfxPlatform::Init()
 {
+    MOZ_RELEASE_ASSERT(!XRE_IsGPUProcess(), "GFX: Not allowed in GPU process.");
     MOZ_RELEASE_ASSERT(NS_IsMainThread(), "GFX: Not in main thread.");
+
     if (gEverInitialized) {
         NS_RUNTIMEABORT("Already started???");
     }
@@ -622,6 +616,14 @@ gfxPlatform::Init()
 
     if (XRE_IsParentProcess()) {
       GPUProcessManager::Initialize();
+
+      if (Preferences::GetBool("media.wmf.skip-blacklist")) {
+        gfxVars::SetPDMWMFDisableD3D11Dlls(nsCString());
+        gfxVars::SetPDMWMFDisableD3D9Dlls(nsCString());
+      } else {
+        gfxVars::SetPDMWMFDisableD3D11Dlls(Preferences::GetCString("media.wmf.disable-d3d11-for-dlls"));
+        gfxVars::SetPDMWMFDisableD3D9Dlls(Preferences::GetCString("media.wmf.disable-d3d9-for-dlls"));
+      }
     }
 
     // Drop a note in the crash report if we end up forcing an option that could
@@ -651,10 +653,9 @@ gfxPlatform::Init()
                                gfxPrefs::WebGLForceLayersReadback(),
                                gfxPrefs::WebGLForceMSAA());
       // Prefs that don't fit into any of the other sections
-      forcedPrefs.AppendPrintf("-T%d%d%d%d) ",
+      forcedPrefs.AppendPrintf("-T%d%d%d) ",
                                gfxPrefs::AndroidRGB16Force(),
                                gfxPrefs::CanvasAzureAccelerated(),
-                               gfxPrefs::DisableGralloc(),
                                gfxPrefs::ForceShmemTiles());
       ScopedGfxFeatureReporter::AppNote(forcedPrefs);
     }
@@ -686,6 +687,11 @@ gfxPlatform::Init()
     #error "No gfxPlatform implementation available"
 #endif
     gPlatform->InitAcceleration();
+
+    if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
+      GPUProcessManager* gpu = GPUProcessManager::Get();
+      gpu->LaunchGPUProcess();
+    }
 
 #ifdef USE_SKIA
     SkGraphics::Init();
@@ -751,10 +757,6 @@ gfxPlatform::Init()
     TexturePoolOGL::Init();
 #endif
 
-#ifdef MOZ_WIDGET_GONK
-    mozilla::layers::InitGralloc();
-#endif
-
     Preferences::RegisterCallbackAndCall(RecordingPrefChanged, "gfx.2d.recording", nullptr);
 
     CreateCMSOutputProfile();
@@ -792,9 +794,26 @@ gfxPlatform::Init()
     InitNullMetadata();
     InitOpenGLConfig();
 
+    if (XRE_IsParentProcess()) {
+      gfxVars::SetDXInterop2Blocked(IsDXInterop2Blocked());
+    }
+
     if (obs) {
       obs->NotifyObservers(nullptr, "gfx-features-ready", nullptr);
     }
+}
+
+/* static*/ bool
+gfxPlatform::IsDXInterop2Blocked()
+{
+  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCString blockId;
+  int32_t status;
+  if (!NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DX_INTEROP2,
+                                              blockId, &status))) {
+    return true;
+  }
+  return status != nsIGfxInfo::FEATURE_STATUS_OK;
 }
 
 /* static */ void
@@ -890,12 +909,6 @@ gfxPlatform::Shutdown()
       GPUProcessManager::Shutdown();
     }
 
-    // This is a bit iffy - we're assuming that we were the ones that set the
-    // log forwarder in the Factory, so that it's our responsibility to
-    // delete it.
-    delete mozilla::gfx::Factory::GetLogForwarder();
-    mozilla::gfx::Factory::SetLogForwarder(nullptr);
-
     gfx::Factory::ShutDown();
 
     delete gGfxPlatformPrefsLock;
@@ -923,9 +936,6 @@ gfxPlatform::InitLayersIPC()
     if (XRE_IsParentProcess())
     {
         layers::CompositorThreadHolder::Start();
-#ifdef MOZ_WIDGET_GONK
-        SharedBufferManagerChild::StartUp();
-#endif
     }
 }
 
@@ -948,10 +958,6 @@ gfxPlatform::ShutdownLayersIPC()
         gfx::VRManagerChild::ShutDown();
         layers::CompositorBridgeChild::ShutDown();
         layers::ImageBridgeChild::ShutDown();
-
-#ifdef MOZ_WIDGET_GONK
-        layers::SharedBufferManagerChild::ShutDown();
-#endif
 
         // This has to happen after shutting down the child protocols.
         layers::CompositorThreadHolder::Shutdown();
@@ -992,7 +998,7 @@ gfxPlatform::~gfxPlatform()
 #endif
 }
 
-already_AddRefed<DrawTarget>
+/* static */ already_AddRefed<DrawTarget>
 gfxPlatform::CreateDrawTargetForSurface(gfxASurface *aSurface, const IntSize& aSize)
 {
   SurfaceFormat format = aSurface->GetSurfaceFormat();
@@ -1156,7 +1162,7 @@ gfxPlatform::GetSourceSurfaceForSurface(DrawTarget *aTarget,
   }
 
   // Add user data to aSurface so we can cache lookups in the future.
-  SourceSurfaceUserData *srcSurfUD = new SourceSurfaceUserData;
+  auto *srcSurfUD = new SourceSurfaceUserData;
   srcSurfUD->mBackendType = aTarget->GetBackendType();
   srcSurfUD->mSrcSurface = srcBuffer;
   aSurface->SetData(&kSourceSurface, srcSurfUD, SourceBufferDestroy);
@@ -1183,7 +1189,7 @@ gfxPlatform::GetWrappedDataSourceSurface(gfxASurface* aSurface)
 
   // If we wrapped the underlying data of aSurface, then we need to add user data
   // to make sure aSurface stays alive until we are done with the data.
-  DependentSourceSurfaceUserData *srcSurfUD = new DependentSourceSurfaceUserData;
+  auto *srcSurfUD = new DependentSourceSurfaceUserData;
   srcSurfUD->mSurface = aSurface;
   result->AddUserData(&kThebesSurface, srcSurfUD, SourceSurfaceDestroyed);
 
@@ -1220,18 +1226,6 @@ gfxPlatform::ComputeTileSize()
       // but I think everything should at least support 1024
       w = h = clamped(int32_t(RoundUpPow2(screenSize.width)) / 4, 256, 1024);
     }
-
-#ifdef MOZ_WIDGET_GONK
-    android::sp<android::GraphicBuffer> alloc =
-          new android::GraphicBuffer(w, h, android::PIXEL_FORMAT_RGBA_8888,
-                                     android::GraphicBuffer::USAGE_SW_READ_OFTEN |
-                                     android::GraphicBuffer::USAGE_SW_WRITE_OFTEN |
-                                     android::GraphicBuffer::USAGE_HW_TEXTURE);
-
-    if (alloc.get()) {
-      w = alloc->getStride(); // We want the tiles to be gralloc stride aligned.
-    }
-#endif
   }
 
   // Don't allow changing the tile size after we've set it.
@@ -1286,10 +1280,15 @@ bool gfxPlatform::AllowOpenGLCanvas()
   // For now, only allow Skia+OpenGL, unless it's blocked.
   // Allow acceleration on Skia if the preference is set, unless it's blocked
   // as long as we have the accelerated layers
-  if (gfxPrefs::CanvasAzureAccelerated() &&
-      mCompositorBackend == LayersBackend::LAYERS_OPENGL &&
-      (GetContentBackendFor(mCompositorBackend) == BackendType::SKIA))
-  {
+
+  // The compositor backend is only set correctly in the parent process,
+  // so we let content process always assume correct compositor backend.
+  // The callers have to do the right thing.
+  bool correctBackend = !XRE_IsParentProcess() ||
+    ((mCompositorBackend == LayersBackend::LAYERS_OPENGL) &&
+     (GetContentBackendFor(mCompositorBackend) == BackendType::SKIA));
+
+  if (gfxPrefs::CanvasAzureAccelerated() && correctBackend) {
     nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
     int32_t status;
     nsCString discardFailureId;
@@ -1397,11 +1396,6 @@ gfxPlatform::PurgeSkiaGPUCache()
 bool
 gfxPlatform::HasEnoughTotalSystemMemoryForSkiaGL()
 {
-#ifdef MOZ_WIDGET_GONK
-  if (mTotalSystemMemory < 250*1024*1024) {
-    return false;
-  }
-#endif
   return true;
 }
 
@@ -1463,7 +1457,12 @@ gfxPlatform::CreateSimilarSoftwareDrawTarget(DrawTarget* aDT,
   if (Factory::DoesBackendSupportDataDrawtarget(aDT->GetBackendType())) {
     dt = aDT->CreateSimilarDrawTarget(aSize, aFormat);
   } else {
-    dt = Factory::CreateDrawTarget(BackendType::SKIA, aSize, aFormat);
+#ifdef USE_SKIA
+    BackendType backendType = BackendType::SKIA;
+#else
+    BackendType backendType = BackendType::CAIRO;
+#endif
+    dt = Factory::CreateDrawTarget(backendType, aSize, aFormat);
   }
 
   return dt.forget();
@@ -1476,7 +1475,11 @@ gfxPlatform::CreateDrawTargetForData(unsigned char* aData, const IntSize& aSize,
   NS_ASSERTION(backendType != BackendType::NONE, "No backend.");
 
   if (!Factory::DoesBackendSupportDataDrawtarget(backendType)) {
+#ifdef USE_SKIA
+    backendType = BackendType::SKIA;
+#else
     backendType = BackendType::CAIRO;
+#endif
   }
 
   RefPtr<DrawTarget> dt = Factory::CreateDrawTargetForData(backendType,
@@ -1497,8 +1500,6 @@ gfxPlatform::BackendTypeForName(const nsCString& aName)
     return BackendType::DIRECT2D;
   if (aName.EqualsLiteral("direct2d1.1"))
     return BackendType::DIRECT2D1_1;
-  if (aName.EqualsLiteral("cg"))
-    return BackendType::COREGRAPHICS;
   return BackendType::NONE;
 }
 
@@ -2188,31 +2189,53 @@ gfxPlatform::InitAcceleration()
                                          "media.hardware-video-decoding.failed",
                                          nullptr,
                                          Preferences::ExactMatch);
+    InitGPUProcessPrefs();
+  }
+}
 
-    FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);
-    if (gfxPrefs::GPUProcessDevEnabled()) {
-      // We want to hide this from about:support, so only set a default if the
-      // pref is known to be true.
-      gpuProc.SetDefaultFromPref(
-        gfxPrefs::GetGPUProcessDevEnabledPrefName(),
-        true,
-        gfxPrefs::GetGPUProcessDevEnabledPrefDefault());
+void
+gfxPlatform::InitGPUProcessPrefs()
+{
+  // We want to hide this from about:support, so only set a default if the
+  // pref is known to be true.
+  if (!gfxPrefs::GPUProcessDevEnabled() && !gfxPrefs::GPUProcessDevForceEnabled()) {
+    return;
+  }
 
-      // We require E10S - otherwise, there is very little benefit to the GPU
-      // process, since the UI process must still use acceleration for
-      // performance.
-      if (!BrowserTabsRemoteAutostart()) {
-        gpuProc.Disable(
-          FeatureStatus::Unavailable,
-          "Multi-process mode is not enabled",
-          NS_LITERAL_CSTRING("FEATURE_FAILURE_NO_E10S"));
-      }
-    }
+  FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);
 
-    if (gpuProc.IsEnabled()) {
-      GPUProcessManager* gpu = GPUProcessManager::Get();
-      gpu->LaunchGPUProcess();
-    }
+  gpuProc.SetDefaultFromPref(
+    gfxPrefs::GetGPUProcessDevEnabledPrefName(),
+    true,
+    gfxPrefs::GetGPUProcessDevEnabledPrefDefault());
+
+  if (gfxPrefs::GPUProcessDevForceEnabled()) {
+    gpuProc.UserForceEnable("User force-enabled via pref");
+  }
+
+  // We require E10S - otherwise, there is very little benefit to the GPU
+  // process, since the UI process must still use acceleration for
+  // performance.
+  if (!BrowserTabsRemoteAutostart()) {
+    gpuProc.ForceDisable(
+      FeatureStatus::Unavailable,
+      "Multi-process mode is not enabled",
+      NS_LITERAL_CSTRING("FEATURE_FAILURE_NO_E10S"));
+    return;
+  }
+  if (InSafeMode()) {
+    gpuProc.ForceDisable(
+      FeatureStatus::Blocked,
+      "Safe-mode is enabled",
+      NS_LITERAL_CSTRING("FEATURE_FAILURE_SAFE_MODE"));
+    return;
+  }
+  if (gfxPrefs::LayerScopeEnabled()) {
+    gpuProc.ForceDisable(
+      FeatureStatus::Blocked,
+      "LayerScope does not work in the GPU process",
+      NS_LITERAL_CSTRING("FEATURE_FAILURE_LAYERSCOPE"));
+    return;
   }
 }
 
@@ -2409,9 +2432,9 @@ gfxPlatform::GetTilesSupportInfo(mozilla::widget::InfoObject& aObj)
 /*static*/ bool
 gfxPlatform::AsyncPanZoomEnabled()
 {
-#if !defined(MOZ_B2G) && !defined(MOZ_WIDGET_ANDROID) && !defined(MOZ_WIDGET_UIKIT)
-  // For XUL applications (everything but B2G on mobile and desktop, and
-  // Firefox on Android) we only want to use APZ when E10S is enabled. If
+#if !defined(MOZ_WIDGET_ANDROID) && !defined(MOZ_WIDGET_UIKIT)
+  // For XUL applications (everything but Firefox on Android)
+  // we only want to use APZ when E10S is enabled. If
   // we ever get input events off the main thread we can consider relaxing
   // this requirement.
   if (!BrowserTabsRemoteAutostart()) {

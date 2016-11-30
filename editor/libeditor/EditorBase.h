@@ -441,8 +441,14 @@ protected:
   /**
    * EnsureComposition() should be called by composition event handlers.  This
    * tries to get the composition for the event and set it to mComposition.
+   * However, this may fail because the composition may be committed before
+   * the event comes to the editor.
+   *
+   * @return            true if there is a composition.  Otherwise, for example,
+   *                    a composition event handler in web contents moved focus
+   *                    for committing the composition, returns false.
    */
-  void EnsureComposition(WidgetCompositionEvent* aCompositionEvent);
+  bool EnsureComposition(WidgetCompositionEvent* aCompositionEvent);
 
   nsresult GetSelection(SelectionType aSelectionType,
                         nsISelection** aSelection);
@@ -922,6 +928,8 @@ public:
    * FindBetterInsertionPoint() tries to look for better insertion point which
    * is typically the nearest text node and offset in it.
    */
+  void FindBetterInsertionPoint(nsCOMPtr<nsIDOMNode>& aNode,
+                                int32_t& aOffset);
   void FindBetterInsertionPoint(nsCOMPtr<nsINode>& aNode,
                                 int32_t& aOffset);
 

@@ -57,6 +57,7 @@
 #include "mozilla/AnimationComparator.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/ContentEvents.h"
+#include "mozilla/DeclarationBlockInlines.h"
 #include "mozilla/EffectSet.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
@@ -149,6 +150,7 @@
 #include "mozilla/Preferences.h"
 #include "nsComputedDOMStyle.h"
 #include "nsDOMStringMap.h"
+#include "DOMIntersectionObserver.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -1966,7 +1968,7 @@ Element::GetSMILOverrideStyle()
   return slots->mSMILOverrideStyle;
 }
 
-css::Declaration*
+DeclarationBlock*
 Element::GetSMILOverrideStyleDeclaration()
 {
   Element::nsDOMSlots *slots = GetExistingDOMSlots();
@@ -1974,7 +1976,7 @@ Element::GetSMILOverrideStyleDeclaration()
 }
 
 nsresult
-Element::SetSMILOverrideStyleDeclaration(css::Declaration* aDeclaration,
+Element::SetSMILOverrideStyleDeclaration(DeclarationBlock* aDeclaration,
                                          bool aNotify)
 {
   Element::nsDOMSlots *slots = DOMSlots();
@@ -2014,14 +2016,14 @@ Element::IsInteractiveHTMLContent(bool aIgnoreTabindex) const
   return false;
 }
 
-css::Declaration*
+DeclarationBlock*
 Element::GetInlineStyleDeclaration()
 {
   return nullptr;
 }
 
 nsresult
-Element::SetInlineStyleDeclaration(css::Declaration* aDeclaration,
+Element::SetInlineStyleDeclaration(DeclarationBlock* aDeclaration,
                                    const nsAString* aSerialized,
                                    bool aNotify)
 {
@@ -2813,9 +2815,9 @@ Element::DescribeAttribute(uint32_t index, nsAString& aOutDescription) const
   aOutDescription.AppendLiteral("=\"");
   nsAutoString value;
   mAttrsAndChildren.AttrAt(index)->ToString(value);
-  for (int i = value.Length(); i >= 0; --i) {
-    if (value[i] == char16_t('"'))
-      value.Insert(char16_t('\\'), uint32_t(i));
+  for (uint32_t i = value.Length(); i > 0; --i) {
+    if (value[i - 1] == char16_t('"'))
+      value.Insert(char16_t('\\'), i - 1);
   }
   aOutDescription.Append(value);
   aOutDescription.Append('"');
@@ -2989,7 +2991,7 @@ Element::CheckHandleEventForLinksPrecondition(EventChainVisitor& aVisitor,
 }
 
 nsresult
-Element::PreHandleEventForLinks(EventChainPreVisitor& aVisitor)
+Element::GetEventTargetParentForLinks(EventChainPreVisitor& aVisitor)
 {
   // Optimisation: return early if this event doesn't interest us.
   // IMPORTANT: this switch and the switch below it must be kept in sync!
@@ -3011,8 +3013,9 @@ Element::PreHandleEventForLinks(EventChainPreVisitor& aVisitor)
 
   nsresult rv = NS_OK;
 
-  // We do the status bar updates in PreHandleEvent so that the status bar gets
-  // updated even if the event is consumed before we have a chance to set it.
+  // We do the status bar updates in GetEventTargetParent so that the status bar
+  // gets updated even if the event is consumed before we have a chance to set
+  // it.
   switch (aVisitor.mEvent->mMessage) {
   // Set the status bar similarly for mouseover and focus
   case eMouseOver:
@@ -3310,14 +3313,6 @@ Element::AttrValueToCORSMode(const nsAttrValue* aValue)
 static const char*
 GetFullScreenError(nsIDocument* aDoc)
 {
-  if (aDoc->NodePrincipal()->GetAppStatus() >= nsIPrincipal::APP_STATUS_INSTALLED) {
-    // Request is in a web app and in the same origin as the web app.
-    // Don't enforce as strict security checks for web apps, the user
-    // is supposed to have trust in them. However documents cross-origin
-    // to the web app must still confirm to the normal security checks.
-    return nullptr;
-  }
-
   if (!nsContentUtils::IsRequestFullScreenAllowed()) {
     return "FullscreenDeniedNotInputDriven";
   }
@@ -3326,7 +3321,7 @@ GetFullScreenError(nsIDocument* aDoc)
 }
 
 void
-Element::RequestFullscreen(ErrorResult& aError)
+Element::RequestFullscreen(CallerType aCallerType, ErrorResult& aError)
 {
   // Only grant full-screen requests if this is called from inside a trusted
   // event handler (i.e. inside an event handler for a user initiated event).
@@ -3341,15 +3336,15 @@ Element::RequestFullscreen(ErrorResult& aError)
   }
 
   auto request = MakeUnique<FullscreenRequest>(this);
-  request->mIsCallerChrome = nsContentUtils::IsCallerChrome();
+  request->mIsCallerChrome = (aCallerType == CallerType::System);
 
   OwnerDoc()->AsyncRequestFullScreen(Move(request));
 }
 
 void
-Element::RequestPointerLock()
+Element::RequestPointerLock(CallerType aCallerType)
 {
-  OwnerDoc()->RequestPointerLock(this);
+  OwnerDoc()->RequestPointerLock(this, aCallerType);
 }
 
 void
@@ -3723,7 +3718,8 @@ Element::InsertAdjacent(const nsAString& aWhere,
     }
     parent->InsertBefore(*aNode, this, aError);
   } else if (aWhere.LowerCaseEqualsLiteral("afterbegin")) {
-    static_cast<nsINode*>(this)->InsertBefore(*aNode, GetFirstChild(), aError);
+    nsCOMPtr<nsINode> refNode = GetFirstChild();
+    static_cast<nsINode*>(this)->InsertBefore(*aNode, refNode, aError);
   } else if (aWhere.LowerCaseEqualsLiteral("beforeend")) {
     static_cast<nsINode*>(this)->AppendChild(*aNode, aError);
   } else if (aWhere.LowerCaseEqualsLiteral("afterend")) {
@@ -3731,7 +3727,8 @@ Element::InsertAdjacent(const nsAString& aWhere,
     if (!parent) {
       return nullptr;
     }
-    parent->InsertBefore(*aNode, GetNextSibling(), aError);
+    nsCOMPtr<nsINode> refNode = GetNextSibling();
+    parent->InsertBefore(*aNode, refNode, aError);
   } else {
     aError.Throw(NS_ERROR_DOM_SYNTAX_ERR);
     return nullptr;
@@ -3884,3 +3881,44 @@ Element::ClearDataset()
   slots->mDataset = nullptr;
 }
 
+nsTArray<Element::nsDOMSlots::IntersectionObserverRegistration>*
+Element::RegisteredIntersectionObservers()
+{
+  nsDOMSlots* slots = DOMSlots();
+  return &slots->mRegisteredIntersectionObservers;
+}
+
+void
+Element::RegisterIntersectionObserver(DOMIntersectionObserver* aObserver)
+{
+  RegisteredIntersectionObservers()->AppendElement(
+    nsDOMSlots::IntersectionObserverRegistration { aObserver, -1 });
+}
+
+void
+Element::UnregisterIntersectionObserver(DOMIntersectionObserver* aObserver)
+{
+  nsTArray<nsDOMSlots::IntersectionObserverRegistration>* observers =
+    RegisteredIntersectionObservers();
+  for (uint32_t i = 0; i < observers->Length(); ++i) {
+    nsDOMSlots::IntersectionObserverRegistration reg = observers->ElementAt(i);
+    if (reg.observer == aObserver) {
+      observers->RemoveElementAt(i);
+      break;
+    }
+  }
+}
+
+bool
+Element::UpdateIntersectionObservation(DOMIntersectionObserver* aObserver, int32_t aThreshold)
+{
+  nsTArray<nsDOMSlots::IntersectionObserverRegistration>* observers =
+    RegisteredIntersectionObservers();
+  for (auto& reg : *observers) {
+    if (reg.observer == aObserver && reg.previousThreshold != aThreshold) {
+      reg.previousThreshold = aThreshold;
+      return true;
+    }
+  }
+  return false;
+}

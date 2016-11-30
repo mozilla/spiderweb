@@ -91,7 +91,6 @@
 #include "nsIX509Cert.h"
 #include "ScopedNSSTypes.h"
 #include "nsNullPrincipal.h"
-#include "nsIPackagedAppService.h"
 #include "nsIDeprecationWarner.h"
 #include "nsIDocument.h"
 #include "nsIDOMDocument.h"
@@ -102,6 +101,7 @@
 #include "CacheControlParser.h"
 #include "nsMixedContentBlocker.h"
 #include "HSTSPrimerListener.h"
+#include "CacheStorageService.h"
 
 namespace mozilla { namespace net {
 
@@ -243,6 +243,8 @@ nsHttpChannel::nsHttpChannel()
     , mOfflineCacheLastModifiedTime(0)
     , mInterceptCache(DO_NOT_INTERCEPT)
     , mInterceptionID(gNumIntercepted++)
+    , mCacheOpenWithPriority(false)
+    , mCacheQueueSizeWhenOpen(0)
     , mCachedContentIsValid(false)
     , mCachedContentIsPartial(false)
     , mCacheOnlyMetadata(false)
@@ -265,7 +267,6 @@ nsHttpChannel::nsHttpChannel()
     , mIsPartialRequest(0)
     , mHasAutoRedirectVetoNotifier(0)
     , mPinCacheContent(0)
-    , mIsPackagedAppResource(0)
     , mIsCorsPreflightDone(0)
     , mStronglyFramed(false)
     , mPushedStream(nullptr)
@@ -1807,7 +1808,7 @@ nsHttpChannel::ProcessSSLInformation()
     nsCOMPtr<nsIX509Cert> cert;
     sslstat->GetServerCert(getter_AddRefs(cert));
     if (cert) {
-        ScopedCERTCertificate nssCert(cert->GetCert());
+        UniqueCERTCertificate nssCert(cert->GetCert());
         if (nssCert) {
             SECOidTag tag = SECOID_GetAlgorithmTag(&nssCert->signature);
             LOG(("Checking certificate signature: The OID tag is %i [this=%p]\n", tag, this));
@@ -3130,6 +3131,9 @@ nsHttpChannel::OnDoneReadingPartialCacheEntry(bool *streamDone)
     // we're now completing the cached content, so we can clear this flag.
     // this puts us in the state of a regular download.
     mCachedContentIsPartial = false;
+    // The cache input stream pump is finished, we do not need it any more.
+    // (see bug 1313923)
+    mCachePump = nullptr;
 
     // resume the transaction if it exists, otherwise the pipe contained the
     // remaining part of the document and we've now streamed all of the data.
@@ -3474,16 +3478,8 @@ nsHttpChannel::OpenCacheEntry(bool isHttps)
         return NS_ERROR_FAILURE;
     }
 
-    uint32_t appId = info->OriginAttributesPtr()->mAppId;
-    bool appOffline = false;
-
-    if (appId != NECKO_NO_APP_ID) {
-        gIOService->IsAppOffline(appId, &appOffline);
-        LOG(("nsHttpChannel::OpenCacheEntry appId: %u, offline: %d\n", appId, appOffline));
-    }
-
     uint32_t cacheEntryOpenFlags;
-    bool offline = gIOService->IsOffline() || appOffline;
+    bool offline = gIOService->IsOffline();
 
     nsAutoCString cacheControlRequestHeader;
     mRequestHead.GetHeader(nsHttp::Cache_Control, cacheControlRequestHeader);
@@ -3573,6 +3569,10 @@ nsHttpChannel::OpenCacheEntry(bool isHttps)
             MOZ_ASSERT(NS_SUCCEEDED(cacheStorage->Exists(openURI, extension, &exists)) && exists,
                        "The entry must exist in the cache after we create it here");
         }
+
+        mCacheOpenWithPriority = cacheEntryOpenFlags & nsICacheStorage::OPEN_PRIORITY;
+        mCacheQueueSizeWhenOpen = CacheStorageService::CacheQueueSize(mCacheOpenWithPriority);
+
         rv = cacheStorage->AsyncOpenURI(openURI, extension, cacheEntryOpenFlags, this);
         NS_ENSURE_SUCCESS(rv, rv);
     }
@@ -4172,12 +4172,6 @@ nsHttpChannel::OnCacheEntryAvailableInternal(nsICacheEntry *entry,
         // falling back), process the fallback asynchronously.
         if (!mFallbackChannel && !mFallbackKey.IsEmpty()) {
             return AsyncCall(&nsHttpChannel::HandleAsyncFallback);
-        }
-
-        if (mIsPackagedAppResource) {
-            // We need to return FILE_NOT_FOUND in case an error occurs
-            // or we will take the user to the <you're offline> screen.
-            return NS_ERROR_FILE_NOT_FOUND;
         }
 
         return NS_ERROR_DOCUMENT_NOT_CACHED;
@@ -5659,7 +5653,7 @@ nsHttpChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *context)
     NS_CompareLoadInfoAndLoadContext(this);
 
 #ifdef DEBUG
-    CheckPrivateBrowsing();
+    AssertPrivateBrowsingId();
 #endif
 
     NS_ENSURE_ARG_POINTER(listener);
@@ -5673,15 +5667,6 @@ nsHttpChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *context)
     if (!gHttpHandler->Active()) {
         LOG(("  after HTTP shutdown..."));
         return NS_ERROR_NOT_AVAILABLE;
-    }
-
-    if (gHttpHandler->PackagedAppsEnabled()) {
-        nsAutoCString path;
-        nsCOMPtr<nsIURL> url(do_QueryInterface(mURI));
-        if (url) {
-            url->GetFilePath(path);
-        }
-        mIsPackagedAppResource = path.Find(PACKAGED_APP_TOKEN) != kNotFound;
     }
 
     rv = NS_CheckPortSafety(mURI);
@@ -5703,6 +5688,11 @@ nsHttpChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *context)
 
     AddCookiesToRequest();
 
+    // Set user agent override, do so before OnOpeningRequest notification
+    // since we want to allow consumers of that notification change or remove
+    // the User-Agent request header.
+    HttpBaseChannel::SetDocshellUserAgentOverride();
+
     // After we notify any observers (on-opening-request, loadGroup, etc) we
     // must return NS_OK and return any errors asynchronously via
     // OnStart/OnStopRequest.  Observers may add a reference to the channel
@@ -5713,9 +5703,6 @@ nsHttpChannel::AsyncOpen(nsIStreamListener *listener, nsISupports *context)
     if (!(mLoadFlags & LOAD_REPLACE)) {
         gHttpHandler->OnOpeningRequest(this);
     }
-
-    // Set user agent override
-    HttpBaseChannel::SetDocshellUserAgentOverride();
 
     mIsPending = true;
     mWasOpened = true;
@@ -5933,32 +5920,6 @@ nsHttpChannel::BeginConnect()
     // clear the already recorded AsyncOpen value for consistency.
     if (!mTimingEnabled)
         mAsyncOpenTime = TimeStamp();
-
-    if (mIsPackagedAppResource) {
-        // If this is a packaged app resource, the content will be fetched
-        // by the packaged app service into the cache, and the cache entry will
-        // be passed to OnCacheEntryAvailable.
-
-        nsCOMPtr<nsIPackagedAppService> pas =
-            do_GetService("@mozilla.org/network/packaged-app-service;1", &rv);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-            return rv;
-        }
-
-        rv = pas->GetResource(this, this);
-        if (NS_FAILED(rv)) {
-            return rv;
-        }
-
-        // We need to alter the flags so the cache entry returned by the
-        // packaged app service is always accepted. Revalidation is handled
-        // by the service.
-        mLoadFlags |= LOAD_ONLY_FROM_CACHE;
-        mLoadFlags |= LOAD_FROM_CACHE;
-        mLoadFlags &= ~VALIDATE_ALWAYS;
-
-        return rv;
-    }
 
     // when proxying only use the pipeline bit if ProxyPipelining() allows it.
     if (!mConnectionInfo->UsingConnect() && mConnectionInfo->UsingHttpProxy()) {
@@ -6417,6 +6378,7 @@ nsHttpChannel::OnStartRequest(nsIRequest *request, nsISupports *ctxt)
                "If we have both pumps, the cache content must be partial");
 
     mAfterOnStartRequestBegun = true;
+    mOnStartRequestTimestamp = TimeStamp::Now();
 
     if (!mSecurityInfo && !mCachePump && mTransaction) {
         // grab the security info from the connection object; the transaction
@@ -6574,6 +6536,8 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
 
     if (mTimingEnabled && request == mCachePump) {
         mCacheReadEnd = TimeStamp::Now();
+
+        ReportNetVSCacheTelemetry();
     }
 
     // allow content to be cached if it was loaded successfully (bug #482935)
@@ -6629,20 +6593,44 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
         // keep the connection around after the transaction is finished.
         //
         RefPtr<nsAHttpConnection> conn;
-        if (authRetry && (mCaps & NS_HTTP_STICKY_CONNECTION)) {
+        LOG(("  authRetry=%d, sticky conn cap=%d", authRetry, mCaps & NS_HTTP_STICKY_CONNECTION));
+        // We must check caps for stickinness also on the transaction because it
+        // might have been updated by the transaction itself during inspection of
+        // the reposnse headers yet on the socket thread (found connection based
+        // auth schema).
+        if (authRetry && (mCaps & NS_HTTP_STICKY_CONNECTION ||
+                          mTransaction->Caps() & NS_HTTP_STICKY_CONNECTION)) {
             conn = mTransaction->GetConnectionReference();
+            LOG(("  transaction %p provides connection %p", mTransaction.get(), conn.get()));
             // This is so far a workaround to fix leak when reusing unpersistent
             // connection for authentication retry. See bug 459620 comment 4
             // for details.
-            if (conn && !conn->IsPersistent())
+            if (conn && !conn->IsPersistent()) {
+                LOG(("  connection is not persistent, not reusing it"));
                 conn = nullptr;
+            }
         }
 
         RefPtr<nsAHttpConnection> stickyConn;
-        if (mCaps & NS_HTTP_STICKY_CONNECTION)
+        if (mCaps & NS_HTTP_STICKY_CONNECTION) {
             stickyConn = mTransaction->GetConnectionReference();
+        }
 
         mTransferSize = mTransaction->GetTransferSize();
+
+        // If we are using the transaction to serve content, we also save the
+        // time since async open in the cache entry so we can compare telemetry
+        // between cache and net response.
+        if (request == mTransactionPump && mCacheEntry &&
+            !mAsyncOpenTime.IsNull() && !mOnStartRequestTimestamp.IsNull()) {
+            nsAutoCString onStartTime;
+            onStartTime.AppendInt( (uint64_t) (mOnStartRequestTimestamp - mAsyncOpenTime).ToMilliseconds());
+            mCacheEntry->SetMetaDataElement("net-response-time-onstart", onStartTime.get());
+
+            nsAutoCString responseTime;
+            responseTime.AppendInt( (uint64_t) (TimeStamp::Now() - mAsyncOpenTime).ToMilliseconds());
+            mCacheEntry->SetMetaDataElement("net-response-time-onstop", responseTime.get());
+        }
 
         // at this point, we're done with the transaction
         mTransactionTimings = mTransaction->Timings();
@@ -8001,25 +7989,32 @@ nsHttpChannel::OnHSTSPrimingFailed(nsresult aError, bool aCached)
 
     LOG(("HSTS Priming Failed [this=%p], %s the load", this,
                 (wouldBlock) ? "blocking" : "allowing"));
-    if (aCached) {
+    if (aError == NS_ERROR_HSTS_PRIMING_TIMEOUT) {
+        // A priming request was sent, but timed out
+        Telemetry::Accumulate(Telemetry::MIXED_CONTENT_HSTS_PRIMING_RESULT,
+                (wouldBlock) ?  HSTSPrimingResult::eHSTS_PRIMING_TIMEOUT_BLOCK :
+                HSTSPrimingResult::eHSTS_PRIMING_TIMEOUT_ACCEPT);
+    } else if (aCached) {
         // Between the time we marked for priming and started the priming request,
         // the host was found to not allow the upgrade, probably from another
         // priming request.
         Telemetry::Accumulate(Telemetry::MIXED_CONTENT_HSTS_PRIMING_RESULT,
                 (wouldBlock) ?  HSTSPrimingResult::eHSTS_PRIMING_CACHED_BLOCK :
-                                HSTSPrimingResult::eHSTS_PRIMING_CACHED_NO_UPGRADE);
+                HSTSPrimingResult::eHSTS_PRIMING_CACHED_NO_UPGRADE);
     } else {
         // A priming request was sent, and no HSTS header was found that allows
         // the upgrade.
         Telemetry::Accumulate(Telemetry::MIXED_CONTENT_HSTS_PRIMING_RESULT,
                 (wouldBlock) ?  HSTSPrimingResult::eHSTS_PRIMING_FAILED_BLOCK :
-                                HSTSPrimingResult::eHSTS_PRIMING_FAILED_ACCEPT);
+                HSTSPrimingResult::eHSTS_PRIMING_FAILED_ACCEPT);
     }
 
-    // Don't visit again for at least one day
+    // Don't visit again for at least
+    // security.mixed_content.hsts_priming_cache_timeout seconds.
     nsISiteSecurityService* sss = gHttpHandler->GetSSService();
     NS_ENSURE_TRUE(sss, NS_ERROR_OUT_OF_MEMORY);
-    nsresult rv = sss->CacheNegativeHSTSResult(mURI, 24 * 60 * 60);
+    nsresult rv = sss->CacheNegativeHSTSResult(mURI,
+            nsMixedContentBlocker::sHSTSPrimingCacheTimeout);
     if (NS_FAILED(rv)) {
         NS_ERROR("nsISiteSecurityService::CacheNegativeHSTSResult failed");
     }
@@ -8050,6 +8045,11 @@ nsHttpChannel::MessageDiversionStarted(ADivertableParentChannel *aParentChannel)
   LOG(("nsHttpChannel::MessageDiversionStarted [this=%p]", this));
   MOZ_ASSERT(!mParentChannel);
   mParentChannel = aParentChannel;
+  // If the channel is suspended, propagate that info to the parent's mEventQ.
+  uint32_t suspendCount = mSuspendCount;
+  while (suspendCount--) {
+    mParentChannel->SuspendMessageDiversion();
+  }
   return NS_OK;
 }
 
@@ -8184,6 +8184,135 @@ nsHttpChannel::SetDoNotTrack()
                            NS_LITERAL_CSTRING("1"),
                            false);
   }
+}
+
+
+void
+nsHttpChannel::ReportNetVSCacheTelemetry()
+{
+    nsresult rv;
+    if (!mCacheEntry) {
+        return;
+    }
+
+    // We only report telemetry if the entry is persistent (on disk)
+    bool persistent;
+    rv = mCacheEntry->GetPersistent(&persistent);
+    if (NS_FAILED(rv) || !persistent) {
+        return;
+    }
+
+    nsXPIDLCString tmpStr;
+    rv = mCacheEntry->GetMetaDataElement("net-response-time-onstart",
+                                         getter_Copies(tmpStr));
+    if (NS_FAILED(rv)) {
+        return;
+    }
+    uint64_t onStartNetTime = tmpStr.ToInteger64(&rv);
+    if (NS_FAILED(rv)) {
+        return;
+    }
+
+    tmpStr.Truncate();
+    rv = mCacheEntry->GetMetaDataElement("net-response-time-onstop",
+                                         getter_Copies(tmpStr));
+    if (NS_FAILED(rv)) {
+        return;
+    }
+    uint64_t onStopNetTime = tmpStr.ToInteger64(&rv);
+    if (NS_FAILED(rv)) {
+        return;
+    }
+
+    uint64_t onStartCacheTime = (mOnStartRequestTimestamp - mAsyncOpenTime).ToMilliseconds();
+    int64_t onStartDiff = onStartNetTime - onStartCacheTime;
+    onStartDiff += 500; // We offset the difference by 500 ms to report positive values in telemetry
+
+    uint64_t onStopCacheTime = (mCacheReadEnd - mAsyncOpenTime).ToMilliseconds();
+    int64_t onStopDiff = onStopNetTime - onStopCacheTime;
+    onStopDiff += 500; // We offset the difference by 500 ms
+
+    if (mDidReval) {
+        Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_REVALIDATED, onStartDiff);
+        Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_REVALIDATED, onStopDiff);
+    } else {
+        Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_NOTREVALIDATED, onStartDiff);
+        Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_NOTREVALIDATED, onStopDiff);
+    }
+
+    if (mDidReval) {
+        // We don't report revalidated probes as the data would be skewed.
+        return;
+    }
+
+    uint32_t diskStorageSizeK = 0;
+    rv = mCacheEntry->GetDiskStorageSizeInKB(&diskStorageSizeK);
+    if (NS_FAILED(rv)) {
+        return;
+    }
+
+    nsAutoCString contentType;
+    if (mResponseHead && mResponseHead->HasContentType()) {
+        mResponseHead->ContentType(contentType);
+    }
+    bool isImage = StringBeginsWith(contentType, NS_LITERAL_CSTRING("image/"));
+    if (isImage) {
+        Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_ISIMG, onStartDiff);
+        Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_ISIMG, onStopDiff);
+    } else {
+        Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_NOTIMG, onStartDiff);
+        Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_NOTIMG, onStopDiff);
+    }
+
+    if (mCacheOpenWithPriority) {
+        if (mCacheQueueSizeWhenOpen < 5) {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_QSMALL_HIGHPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_QSMALL_HIGHPRI, onStopDiff);
+        } else if (mCacheQueueSizeWhenOpen < 10) {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_QMED_HIGHPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_QMED_HIGHPRI, onStopDiff);
+        } else {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_QBIG_HIGHPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_QBIG_HIGHPRI, onStopDiff);
+        }
+    } else { // The limits are higher for normal priority cache queues
+        if (mCacheQueueSizeWhenOpen < 10) {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_QSMALL_NORMALPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_QSMALL_NORMALPRI, onStopDiff);
+        } else if (mCacheQueueSizeWhenOpen < 50) {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_QMED_NORMALPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_QMED_NORMALPRI, onStopDiff);
+        } else {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_QBIG_NORMALPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_QBIG_NORMALPRI, onStopDiff);
+        }
+    }
+
+    if (diskStorageSizeK < 32) {
+        if (mCacheOpenWithPriority) {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_SMALL_HIGHPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_SMALL_HIGHPRI, onStopDiff);
+        } else {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_SMALL_NORMALPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_SMALL_NORMALPRI, onStopDiff);
+        }
+    } else if (diskStorageSizeK < 256) {
+        if (mCacheOpenWithPriority) {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_MED_HIGHPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_MED_HIGHPRI, onStopDiff);
+        } else {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_MED_NORMALPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_MED_NORMALPRI, onStopDiff);
+        }
+    } else {
+        if (mCacheOpenWithPriority) {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_LARGE_HIGHPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_LARGE_HIGHPRI, onStopDiff);
+        } else {
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTART_LARGE_NORMALPRI, onStartDiff);
+            Telemetry::Accumulate(Telemetry::HTTP_NET_VS_CACHE_ONSTOP_LARGE_NORMALPRI, onStopDiff);
+        }
+    }
 }
 
 } // namespace net

@@ -29,8 +29,6 @@
 #include "nsIPrincipal.h"
 #include "nsContentUtils.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsIAppsService.h"
-#include "mozIApplication.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsPIDOMWindow.h"
 #include "nsIDocument.h"
@@ -1575,12 +1573,6 @@ nsPermissionManager::AddInternal(nsIPrincipal* aPrincipal,
     ContentParent::GetAll(cplist);
     for (uint32_t i = 0; i < cplist.Length(); ++i) {
       ContentParent* cp = cplist[i];
-      // On platforms where we use a preallocated template process we don't
-      // want to notify this process about session specific permissions so
-      // new tabs or apps created on it won't inherit the session permissions.
-      if (cp->IsPreallocated() &&
-          aExpireType == nsIPermissionManager::EXPIRE_SESSION)
-        continue;
       if (cp->NeedsPermissionsUpdate())
         Unused << cp->SendAddPermission(permission);
     }
@@ -2434,63 +2426,6 @@ nsPermissionManager::RemovePermissionsWithAttributes(mozilla::OriginAttributesPa
   return NS_OK;
 }
 
-nsresult
-nsPermissionManager::RemoveExpiredPermissionsForApp(uint32_t aAppId)
-{
-  ENSURE_NOT_CHILD_PROCESS;
-
-  if (aAppId == nsIScriptSecurityManager::NO_APP_ID) {
-    return NS_OK;
-  }
-
-  for (auto iter = mPermissionTable.Iter(); !iter.Done(); iter.Next()) {
-    PermissionHashKey* entry = iter.Get();
-    nsCOMPtr<nsIPrincipal> principal;
-    GetPrincipalFromOrigin(entry->GetKey()->mOrigin, getter_AddRefs(principal));
-
-    if (principal->GetAppId() != aAppId) {
-      continue;
-    }
-
-    for (uint32_t i = 0; i < entry->GetPermissions().Length(); ++i) {
-      PermissionEntry& permEntry = entry->GetPermissions()[i];
-      if (permEntry.mExpireType != nsIPermissionManager::EXPIRE_SESSION) {
-        continue;
-      }
-
-      if (permEntry.mNonSessionExpireType ==
-            nsIPermissionManager::EXPIRE_SESSION) {
-        PermissionEntry oldPermEntry = entry->GetPermissions()[i];
-
-        entry->GetPermissions().RemoveElementAt(i);
-
-        NotifyObserversWithPermission(principal,
-                                      mTypeArray.ElementAt(oldPermEntry.mType),
-                                      oldPermEntry.mPermission,
-                                      oldPermEntry.mExpireType,
-                                      oldPermEntry.mExpireTime,
-                                      u"deleted");
-
-        --i;
-        continue;
-      }
-
-      permEntry.mPermission = permEntry.mNonSessionPermission;
-      permEntry.mExpireType = permEntry.mNonSessionExpireType;
-      permEntry.mExpireTime = permEntry.mNonSessionExpireTime;
-
-      NotifyObserversWithPermission(principal,
-                                    mTypeArray.ElementAt(permEntry.mType),
-                                    permEntry.mPermission,
-                                    permEntry.mExpireType,
-                                    permEntry.mExpireTime,
-                                    u"changed");
-    }
-  }
-
-  return NS_OK;
-}
-
 //*****************************************************************************
 //*** nsPermissionManager private methods
 //*****************************************************************************
@@ -2899,55 +2834,6 @@ nsPermissionManager::UpdateDB(OperationType aOp,
   nsCOMPtr<mozIStoragePendingStatement> pending;
   rv = aStmt->ExecuteAsync(nullptr, getter_AddRefs(pending));
   MOZ_ASSERT(NS_SUCCEEDED(rv));
-}
-
-NS_IMETHODIMP
-nsPermissionManager::AddrefAppId(uint32_t aAppId)
-{
-  if (aAppId == nsIScriptSecurityManager::NO_APP_ID) {
-    return NS_OK;
-  }
-
-  bool found = false;
-  for (uint32_t i = 0; i < mAppIdRefcounts.Length(); ++i) {
-    if (mAppIdRefcounts[i].mAppId == aAppId) {
-      ++mAppIdRefcounts[i].mCounter;
-      found = true;
-      break;
-    }
-  }
-
-  if (!found) {
-    ApplicationCounter app = { aAppId, 1 };
-    mAppIdRefcounts.AppendElement(app);
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsPermissionManager::ReleaseAppId(uint32_t aAppId)
-{
-  // An app has been released, maybe we have to reset its session.
-
-  if (aAppId == nsIScriptSecurityManager::NO_APP_ID) {
-    return NS_OK;
-  }
-
-  for (uint32_t i = 0; i < mAppIdRefcounts.Length(); ++i) {
-    if (mAppIdRefcounts[i].mAppId == aAppId) {
-      --mAppIdRefcounts[i].mCounter;
-
-      if (!mAppIdRefcounts[i].mCounter) {
-        mAppIdRefcounts.RemoveElementAt(i);
-        return RemoveExpiredPermissionsForApp(aAppId);
-      }
-
-      break;
-    }
-  }
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP

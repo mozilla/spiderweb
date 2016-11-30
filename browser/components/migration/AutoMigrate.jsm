@@ -122,7 +122,7 @@ const AutoMigrate = {
     histogram.add(15);
 
     let sawErrors = false;
-    let migrationObserver = (subject, topic, data) => {
+    let migrationObserver = (subject, topic) => {
       if (topic == "Migration:ItemError") {
         sawErrors = true;
       } else if (topic == "Migration:Ended") {
@@ -358,6 +358,8 @@ const AutoMigrate = {
     notificationBox.appendNotification(
       message, kNotificationId, null, notificationBox.PRIORITY_INFO_HIGH, buttons
     );
+    let remainingDays = Preferences.get(kAutoMigrateDaysToOfferUndoPref, 0);
+    Services.telemetry.getHistogramById("FX_STARTUP_MIGRATION_UNDO_OFFERED").add(4 - remainingDays);
   },
 
   shouldStillShowUndoPrompt() {

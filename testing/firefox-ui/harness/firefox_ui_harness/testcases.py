@@ -8,26 +8,21 @@ from datetime import datetime
 
 import mozfile
 
+from firefox_puppeteer import PuppeteerMixin
+from firefox_puppeteer.api.prefs import Preferences
+from firefox_puppeteer.api.software_update import SoftwareUpdate
+from firefox_puppeteer.ui.update_wizard import UpdateWizardDialog
+
 from marionette import MarionetteTestCase
 from marionette_driver import Wait
 from marionette_driver.errors import NoSuchWindowException
 
-from firefox_puppeteer.api.prefs import Preferences
-from firefox_puppeteer.api.software_update import SoftwareUpdate
-from firefox_puppeteer.testcases import BaseFirefoxTestCase
-from firefox_puppeteer.ui.update_wizard import UpdateWizardDialog
 
-
-class FirefoxTestCase(BaseFirefoxTestCase, MarionetteTestCase):
-    """ Integrate MarionetteTestCase with BaseFirefoxTestCase by reordering MRO """
-    pass
-
-
-class UpdateTestCase(FirefoxTestCase):
+class UpdateTestCase(PuppeteerMixin, MarionetteTestCase):
 
     TIMEOUT_UPDATE_APPLY = 300
     TIMEOUT_UPDATE_CHECK = 30
-    TIMEOUT_UPDATE_DOWNLOAD = 360
+    TIMEOUT_UPDATE_DOWNLOAD = 720
 
     # For the old update wizard, the errors are displayed inside the dialog. For the
     # handling of updates in the about window the errors are displayed in new dialogs.
@@ -40,6 +35,8 @@ class UpdateTestCase(FirefoxTestCase):
 
     def __init__(self, *args, **kwargs):
         super(UpdateTestCase, self).__init__(*args, **kwargs)
+
+        self.update_url = kwargs.pop('update_url')
 
         self.target_buildid = kwargs.pop('update_target_buildid')
         self.target_version = kwargs.pop('update_target_version')
@@ -55,7 +52,7 @@ class UpdateTestCase(FirefoxTestCase):
     def setUp(self, is_fallback=False):
         super(UpdateTestCase, self).setUp()
 
-        self.software_update = SoftwareUpdate(lambda: self.marionette)
+        self.software_update = SoftwareUpdate(self.marionette)
         self.download_duration = None
 
         # Bug 604364 - Preparation to test multiple update steps
@@ -63,6 +60,8 @@ class UpdateTestCase(FirefoxTestCase):
 
         # Ensure that there exists no already partially downloaded update
         self.remove_downloaded_update()
+
+        self.set_preferences_defaults()
 
         # If requested modify the default update channel. It will be active
         # after the next restart of the application
@@ -168,7 +167,11 @@ class UpdateTestCase(FirefoxTestCase):
 
         about_window = self.browser.open_about_window()
         try:
+            # Bug 604364 - We do not support watershed releases yet.
             update_available = self.check_for_updates(about_window)
+            self.assertFalse(update_available,
+                             'Additional update found due to watershed release {}'.format(
+                                 update['build_post']['version']))
 
             # The upgraded version should be identical with the version given by
             # the update and we shouldn't have run a downgrade
@@ -199,17 +202,6 @@ class UpdateTestCase(FirefoxTestCase):
             self.assertEqual(update['build_post']['disabled_addons'],
                              update['build_pre']['disabled_addons'])
 
-            # Bug 604364 - We do not support watershed releases yet.
-            if update_available:
-                self.download_update(about_window, wait_for_finish=False)
-                self.assertNotEqual(self.software_update.active_update.type,
-                                    update['patch']['type'],
-                                    'No further update of the same type gets offered: '
-                                    '{0} != {1}'.format(
-                                        self.software_update.active_update.type,
-                                        update['patch']['type']
-                                    ))
-
             update['success'] = True
 
         finally:
@@ -229,7 +221,7 @@ class UpdateTestCase(FirefoxTestCase):
 
             :param dialog: Instance of :class:`UpdateWizardDialog`.
             """
-            prefs = Preferences(lambda: self.marionette)
+            prefs = Preferences(self.marionette)
             prefs.set_pref(self.PREF_APP_UPDATE_ALTWINDOWTYPE, dialog.window_type)
 
             try:
@@ -241,7 +233,8 @@ class UpdateTestCase(FirefoxTestCase):
 
                 # If incompatible add-on are installed, skip over the wizard page
                 # TODO: Remove once we no longer support version Firefox 45.0ESR
-                if self.utils.compare_version(self.appinfo.version, '49.0a1') == -1:
+                if self.puppeteer.utils.compare_version(self.puppeteer.appinfo.version,
+                                                        '49.0a1') == -1:
                     if dialog.wizard.selected_panel == dialog.wizard.incompatible_list:
                         dialog.select_next_page()
 
@@ -269,7 +262,7 @@ class UpdateTestCase(FirefoxTestCase):
                                     dialog.wizard.selected_panel))
 
             finally:
-                prefs.restore_pref(self.PREF_APP_UPDATE_ALTWINDOWTYPE)
+                self.marionette.clear_pref(self.PREF_APP_UPDATE_ALTWINDOWTYPE)
 
         # The old update wizard dialog has to be handled differently. It's necessary
         # for fallback updates and invalid add-on versions.
@@ -321,7 +314,7 @@ class UpdateTestCase(FirefoxTestCase):
     def download_and_apply_forced_update(self):
         # The update wizard dialog opens automatically after the restart but with a short delay
         dialog = Wait(self.marionette, ignored_exceptions=[NoSuchWindowException]).until(
-            lambda _: self.windows.switch_to(lambda win: type(win) is UpdateWizardDialog)
+            lambda _: self.puppeteer.windows.switch_to(lambda win: type(win) is UpdateWizardDialog)
         )
 
         # In case of a broken complete update the about window has to be used
@@ -381,6 +374,13 @@ class UpdateTestCase(FirefoxTestCase):
         self.logger.info('Clean-up update staging directory: {}'.format(path))
         mozfile.remove(path)
 
+    def restart(self, *args, **kwargs):
+        super(UpdateTestCase, self).restart(*args, **kwargs)
+
+        # After a restart default preference values as set in the former session are lost.
+        # Make sure that any of those are getting restored.
+        self.set_preferences_defaults()
+
     def restore_config_files(self):
         # Reset channel-prefs.js file if modified
         try:
@@ -403,6 +403,12 @@ class UpdateTestCase(FirefoxTestCase):
         except IOError:
             self.logger.error('Failed to reset the default mar channels.',
                               exc_info=True)
+
+    def set_preferences_defaults(self):
+        """Set the default value for specific preferences to force its usage."""
+        if self.update_url:
+            self.puppeteer.prefs.set_pref("app.update.url", self.update_url,
+                                          default_branch=True)
 
     def wait_for_download_finished(self, window, timeout=TIMEOUT_UPDATE_DOWNLOAD):
         """ Waits until download is completed.

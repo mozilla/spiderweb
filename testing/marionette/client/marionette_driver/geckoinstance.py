@@ -153,7 +153,9 @@ class GeckoInstance(object):
         # environment variables needed for crashreporting
         # https://developer.mozilla.org/docs/Environment_variables_affecting_crash_reporting
         env.update({'MOZ_CRASHREPORTER': '1',
-                    'MOZ_CRASHREPORTER_NO_REPORT': '1'})
+                    'MOZ_CRASHREPORTER_NO_REPORT': '1',
+                    'MOZ_CRASHREPORTER_SHUTDOWN': '1',
+                    })
 
         return {
             'binary': self.binary,
@@ -271,29 +273,6 @@ class FennecInstance(GeckoInstance):
             )
 
 
-class B2GDesktopInstance(GeckoInstance):
-    def __init__(self, host, port, bin, **kwargs):
-        # Pass a profile and change the binary to -bin so that
-        # the built-in gaia profile doesn't get touched.
-        if kwargs.get('profile', None) is None:
-            # GeckoInstance.start will clone the profile.
-            kwargs['profile'] = os.path.join(os.path.dirname(bin),
-                                             'gaia',
-                                             'profile')
-        if '-bin' not in os.path.basename(bin):
-            if bin.endswith('.exe'):
-                newbin = bin[:-len('.exe')] + '-bin.exe'
-            else:
-                newbin = bin + '-bin'
-            if os.path.exists(newbin):
-                bin = newbin
-        super(B2GDesktopInstance, self).__init__(host, port, bin, **kwargs)
-        if not self.prefs:
-            self.prefs = {}
-        self.prefs["focusmanager.testmode"] = True
-        self.app_args += ['-chrome', 'chrome://b2g/content/shell.html']
-
-
 class DesktopInstance(GeckoInstance):
     desktop_prefs = {
         'app.update.auto': False,
@@ -314,7 +293,6 @@ class DesktopInstance(GeckoInstance):
         'browser.tabs.warnOnClose': False,
         'browser.tabs.warnOnOpen': False,
         'browser.uitour.enabled': False,
-        'browser.usedOnWindows10.introURL': '',
         'extensions.getAddons.cache.enabled': False,
         'extensions.installDistroAddons': False,
         'extensions.showMismatchUI': False,
@@ -340,8 +318,11 @@ class NullOutput(object):
 
 
 apps = {
-    'b2g': B2GDesktopInstance,
-    'b2gdesktop': B2GDesktopInstance,
-    'fxdesktop': DesktopInstance,
     'fennec': FennecInstance,
+    'fxdesktop': DesktopInstance,
+}
+
+app_ids = {
+    '{aa3c5121-dab2-40e2-81ca-7ea25febc110}': 'fennec',
+    '{ec8030f7-c20a-464f-9b0e-13a3a9e97384}': 'fxdesktop',
 }

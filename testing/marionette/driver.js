@@ -17,7 +17,10 @@ Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyServiceGetter(
     this, "cookieManager", "@mozilla.org/cookiemanager;1", "nsICookieManager2");
 
+Cu.import("chrome://marionette/content/accessibility.js");
 Cu.import("chrome://marionette/content/action.js");
+Cu.import("chrome://marionette/content/addon.js");
+Cu.import("chrome://marionette/content/assert.js");
 Cu.import("chrome://marionette/content/atom.js");
 Cu.import("chrome://marionette/content/browser.js");
 Cu.import("chrome://marionette/content/element.js");
@@ -25,6 +28,8 @@ Cu.import("chrome://marionette/content/error.js");
 Cu.import("chrome://marionette/content/evaluate.js");
 Cu.import("chrome://marionette/content/event.js");
 Cu.import("chrome://marionette/content/interaction.js");
+Cu.import("chrome://marionette/content/l10n.js");
+Cu.import("chrome://marionette/content/legacyaction.js");
 Cu.import("chrome://marionette/content/logging.js");
 Cu.import("chrome://marionette/content/modal.js");
 Cu.import("chrome://marionette/content/proxy.js");
@@ -91,12 +96,12 @@ this.Context.fromString = function(s) {
  *
  * @param {string} appName
  *     Description of the product, for example "B2G" or "Firefox".
- * @param {function()} stopSignal
- *     Signal to stop the Marionette server.
+ * @param {MarionetteServer} server
+ *     The instance of Marionette server.
  */
-this.GeckoDriver = function(appName, stopSignal) {
+this.GeckoDriver = function(appName, server) {
   this.appName = appName;
-  this.stopSignal_ = stopSignal;
+  this._server = server;
 
   this.sessionId = null;
   this.wins = new browser.Windows();
@@ -138,18 +143,10 @@ this.GeckoDriver = function(appName, stopSignal) {
     "raisesAccessibilityExceptions": false,
     "rotatable": this.appName == "B2G",
     "acceptSslCerts": false,
-    "takesElementScreenshot": true,
-    "takesScreenshot": true,
     "proxy": {},
 
-    // Selenium 2 compat
-    "platform": Services.sysinfo.getProperty("name").toUpperCase(),
-
     // proprietary extensions
-    "XULappId" : Services.appinfo.ID,
-    "appBuildId" : Services.appinfo.appBuildID,
     "processId" : Services.appinfo.processID,
-    "version": Services.appinfo.version,
   };
 
   this.mm = globalMessageManager;
@@ -484,6 +481,14 @@ GeckoDriver.prototype.newSession = function*(cmd, resp) {
 
   this.newSessionCommandId = cmd.id;
   this.setSessionCapabilities(cmd.parameters.capabilities);
+  // If we are testing accessibility with marionette, start a11y service in
+  // chrome first. This will ensure that we do not have any content-only
+  // services hanging around.
+  if (this.sessionCapabilities.raisesAccessibilityExceptions &&
+      accessibility.service) {
+    logger.info("Preemptively starting accessibility service in Chrome");
+  }
+
   this.scriptTimeout = 10000;
 
   let registerBrowsers = this.registerPromise();
@@ -639,51 +644,51 @@ GeckoDriver.prototype.setSessionCapabilities = function(newCaps) {
 GeckoDriver.prototype.setUpProxy = function(proxy) {
   logger.config("User-provided proxy settings: " + JSON.stringify(proxy));
 
-  if (typeof proxy == "object" && proxy.hasOwnProperty("proxyType")) {
-    switch (proxy.proxyType.toUpperCase()) {
-      case "MANUAL":
-        Preferences.set("network.proxy.type", 1);
-        if (proxy.httpProxy && proxy.httpProxyPort){
-          Preferences.set("network.proxy.http", proxy.httpProxy);
-          Preferences.set("network.proxy.http_port", proxy.httpProxyPort);
+  assert.object(proxy);
+  if (!proxy.hasOwnProperty("proxyType")) {
+    throw new InvalidArgumentError();
+  }
+  switch (proxy.proxyType.toUpperCase()) {
+    case "MANUAL":
+      Preferences.set("network.proxy.type", 1);
+      if (proxy.httpProxy && proxy.httpProxyPort){
+        Preferences.set("network.proxy.http", proxy.httpProxy);
+        Preferences.set("network.proxy.http_port", proxy.httpProxyPort);
+      }
+      if (proxy.sslProxy && proxy.sslProxyPort){
+        Preferences.set("network.proxy.ssl", proxy.sslProxy);
+        Preferences.set("network.proxy.ssl_port", proxy.sslProxyPort);
+      }
+      if (proxy.ftpProxy && proxy.ftpProxyPort) {
+        Preferences.set("network.proxy.ftp", proxy.ftpProxy);
+        Preferences.set("network.proxy.ftp_port", proxy.ftpProxyPort);
+      }
+      if (proxy.socksProxy) {
+        Preferences.set("network.proxy.socks", proxy.socksProxy);
+        Preferences.set("network.proxy.socks_port", proxy.socksProxyPort);
+        if (proxy.socksVersion) {
+          Preferences.set("network.proxy.socks_version", proxy.socksVersion);
         }
-        if (proxy.sslProxy && proxy.sslProxyPort){
-          Preferences.set("network.proxy.ssl", proxy.sslProxy);
-          Preferences.set("network.proxy.ssl_port", proxy.sslProxyPort);
-        }
-        if (proxy.ftpProxy && proxy.ftpProxyPort) {
-          Preferences.set("network.proxy.ftp", proxy.ftpProxy);
-          Preferences.set("network.proxy.ftp_port", proxy.ftpProxyPort);
-        }
-        if (proxy.socksProxy) {
-          Preferences.set("network.proxy.socks", proxy.socksProxy);
-          Preferences.set("network.proxy.socks_port", proxy.socksProxyPort);
-          if (proxy.socksVersion) {
-            Preferences.set("network.proxy.socks_version", proxy.socksVersion);
-          }
-        }
-        break;
+      }
+      break;
 
-      case "PAC":
-        Preferences.set("network.proxy.type", 2);
-        Preferences.set("network.proxy.autoconfig_url", proxy.proxyAutoconfigUrl);
-        break;
+    case "PAC":
+      Preferences.set("network.proxy.type", 2);
+      Preferences.set("network.proxy.autoconfig_url", proxy.proxyAutoconfigUrl);
+      break;
 
-      case "AUTODETECT":
-        Preferences.set("network.proxy.type", 4);
-        break;
+    case "AUTODETECT":
+      Preferences.set("network.proxy.type", 4);
+      break;
 
-      case "SYSTEM":
-        Preferences.set("network.proxy.type", 5);
-        break;
+    case "SYSTEM":
+      Preferences.set("network.proxy.type", 5);
+      break;
 
-      case "NOPROXY":
-      default:
-        Preferences.set("network.proxy.type", 0);
-        break;
-    }
-  } else {
-    throw new InvalidArgumentError("Value of 'proxy' should be an object");
+    case "NOPROXY":
+    default:
+      Preferences.set("network.proxy.type", 0);
+      break;
   }
 };
 
@@ -974,6 +979,7 @@ GeckoDriver.prototype.get = function*(cmd, resp) {
       // send errors.
       this.curBrowser.pendingCommands.push(() => {
         cmd.parameters.command_id = id;
+        cmd.parameters.pageTimeout = this.pageTimeout;
         this.mm.broadcastAsyncMessage(
             "Marionette:pollForReadyState" + this.curBrowser.curFrameId,
             cmd.parameters);
@@ -1255,10 +1261,8 @@ GeckoDriver.prototype.setWindowPosition = function(cmd, resp) {
   }
 
   let {x, y} = cmd.parameters;
-  if (!Number.isInteger(x) || !Number.isInteger(y) ||
-      x < 0 || y < 0) {
-    throw new InvalidArgumentError();
-  }
+  assert.positiveInteger(x);
+  assert.positiveInteger(y);
 
   let win = this.getCurrentWindow();
   win.moveTo(x, y);
@@ -1560,9 +1564,7 @@ GeckoDriver.prototype.timeouts = function(cmd, resp) {
   }
 
   for (let [typ, ms] of Object.entries(timeouts)) {
-    if (!Number.isInteger(ms)) {
-      throw new InvalidArgumentError();
-    }
+    assert.positiveInteger(ms);
 
     switch (typ) {
       case "implicit":
@@ -2001,10 +2003,7 @@ GeckoDriver.prototype.getElementRect = function*(cmd, resp) {
  */
 GeckoDriver.prototype.sendKeysToElement = function*(cmd, resp) {
   let {id, value} = cmd.parameters;
-
-  if (!value) {
-    throw new InvalidArgumentError(`Expected character sequence: ${value}`);
-  }
+  assert.defined(value, `Expected character sequence: ${value}`);
 
   switch (this.context) {
     case Context.CHROME:
@@ -2426,19 +2425,18 @@ GeckoDriver.prototype.getScreenOrientation = function(cmd, resp) {
  * and "portrait-secondary" as well as "landscape-secondary".
  */
 GeckoDriver.prototype.setScreenOrientation = function(cmd, resp) {
-  if (this.appName == "Firefox") {
-    throw new UnsupportedOperationError();
-  }
+  assert.fennec();
 
   const ors = [
     "portrait", "landscape",
     "portrait-primary", "landscape-primary",
-    "portrait-secondary", "landscape-secondary"
+    "portrait-secondary", "landscape-secondary",
   ];
 
   let or = String(cmd.parameters.orientation);
+  assert.string(or);
   let mozOr = or.toLowerCase();
-  if (ors.indexOf(mozOr) < 0) {
+  if (!ors.include(mozOr)) {
     throw new InvalidArgumentError(`Unknown screen orientation: ${or}`);
   }
 
@@ -2560,6 +2558,27 @@ GeckoDriver.prototype._checkIfAlertIsPresent = function() {
 };
 
 /**
+ * Enables or disables accepting new socket connections.
+ *
+ * By calling this method with `false` the server will not accept any further
+ * connections, but existing connections will not be forcible closed. Use `true`
+ * to re-enable accepting connections.
+ *
+ * Please note that when closing the connection via the client you can end-up in
+ * a non-recoverable state if it hasn't been enabled before.
+ *
+ * This method is used for custom in application shutdowns via marionette.quit()
+ * or marionette.restart(), like File -> Quit.
+ *
+ * @param {boolean} state
+ *     True if the server should accept new socket connections.
+ */
+GeckoDriver.prototype.acceptConnections = function(cmd, resp) {
+  assert.boolean(cmd.parameters.value);
+  this._server.acceptConnections = cmd.parameters.value;
+}
+
+/**
  * Quits Firefox with the provided flags and tears down the current
  * session.
  */
@@ -2573,11 +2592,39 @@ GeckoDriver.prototype.quitApplication = function(cmd, resp) {
     flags |= Ci.nsIAppStartup[k];
   }
 
-  this.stopSignal_();
+  this._server.acceptConnections = false;
   resp.send();
 
   this.sessionTearDown();
   Services.startup.quit(flags);
+};
+
+GeckoDriver.prototype.installAddon = function(cmd, resp) {
+  if (this.appName != "Firefox") {
+    throw new UnsupportedOperationError();
+  }
+
+  let path = cmd.parameters.path;
+  let temp = cmd.parameters.temporary || false;
+  if (typeof path == "undefined" || typeof path != "string" ||
+      typeof temp != "boolean") {
+    throw InvalidArgumentError();
+  }
+
+  return addon.install(path, temp);
+};
+
+GeckoDriver.prototype.uninstallAddon = function(cmd, resp) {
+  if (this.appName != "Firefox") {
+    throw new UnsupportedOperationError();
+  }
+
+  let id = cmd.parameters.id;
+  if (typeof id == "undefined" || typeof id != "string") {
+    throw new InvalidArgumentError();
+  }
+
+  return addon.uninstall(id);
 };
 
 /**
@@ -2694,6 +2741,60 @@ GeckoDriver.prototype.responseCompleted = function () {
   }
 };
 
+/**
+ * Retrieve the localized string for the specified entity id.
+ *
+ * Example:
+ *     localizeEntity(["chrome://global/locale/about.dtd"], "about.version")
+ *
+ * @param {Array.<string>} urls
+ *     Array of .dtd URLs.
+ * @param {string} id
+ *     The ID of the entity to retrieve the localized string for.
+ *
+ * @return {string}
+ *     The localized string for the requested entity.
+ */
+GeckoDriver.prototype.localizeEntity = function(cmd, resp) {
+  let {urls, id} = cmd.parameters;
+
+  if (!Array.isArray(urls)) {
+    throw new InvalidArgumentError("Value of `urls` should be of type 'Array'");
+  }
+  if (typeof id != "string") {
+    throw new InvalidArgumentError("Value of `id` should be of type 'string'");
+  }
+
+  resp.body.value = l10n.localizeEntity(urls, id);
+}
+
+/**
+ * Retrieve the localized string for the specified property id.
+ *
+ * Example:
+ *     localizeProperty(["chrome://global/locale/findbar.properties"], "FastFind")
+ *
+ * @param {Array.<string>} urls
+ *     Array of .properties URLs.
+ * @param {string} id
+ *     The ID of the property to retrieve the localized string for.
+ *
+ * @return {string}
+ *     The localized string for the requested property.
+ */
+GeckoDriver.prototype.localizeProperty = function(cmd, resp) {
+  let {urls, id} = cmd.parameters;
+
+  if (!Array.isArray(urls)) {
+    throw new InvalidArgumentError("Value of `urls` should be of type 'Array'");
+  }
+  if (typeof id != "string") {
+    throw new InvalidArgumentError("Value of `id` should be of type 'string'");
+  }
+
+  resp.body.value = l10n.localizeProperty(urls, id);
+}
+
 GeckoDriver.prototype.commands = {
   "getMarionetteID": GeckoDriver.prototype.getMarionetteID,
   "sayHello": GeckoDriver.prototype.sayHello,
@@ -2776,5 +2877,12 @@ GeckoDriver.prototype.commands = {
   "acceptDialog": GeckoDriver.prototype.acceptDialog,
   "getTextFromDialog": GeckoDriver.prototype.getTextFromDialog,
   "sendKeysToDialog": GeckoDriver.prototype.sendKeysToDialog,
+  "acceptConnections": GeckoDriver.prototype.acceptConnections,
   "quitApplication": GeckoDriver.prototype.quitApplication,
+
+  "localization:l10n:localizeEntity": GeckoDriver.prototype.localizeEntity,
+  "localization:l10n:localizeProperty": GeckoDriver.prototype.localizeProperty,
+
+  "addon:install": GeckoDriver.prototype.installAddon,
+  "addon:uninstall": GeckoDriver.prototype.uninstallAddon,
 };

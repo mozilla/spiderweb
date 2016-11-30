@@ -1175,7 +1175,7 @@ EventRunnable::PreDispatch(WorkerPrivate* /* unused */)
         }
 
         if (doClone) {
-          Write(cx, response, transferable, rv);
+          Write(cx, response, transferable, JS::CloneDataPolicy(), rv);
           if (NS_WARN_IF(rv.Failed())) {
             NS_WARNING("Failed to clone response!");
             mResponseResult = rv.StealNSResult();
@@ -1669,7 +1669,9 @@ XMLHttpRequestWorker::MaybeDispatchPrematureAbortEvents(ErrorResult& aRv)
 
   // Only send readystatechange event when state changed.
   bool isStateChanged = false;
-  if (mStateData.mReadyState != 4) {
+  if ((mStateData.mReadyState == 1 && mStateData.mFlagSend) ||
+      mStateData.mReadyState == 2 ||
+      mStateData.mReadyState == 3) {
     isStateChanged = true;
     mStateData.mReadyState = 4;
   }
@@ -1811,6 +1813,8 @@ XMLHttpRequestWorker::SendInternal(SendRunnable* aRunnable,
   aRunnable->SetSyncLoopTarget(syncLoopTarget);
   aRunnable->SetHaveUploadListeners(hasUploadListeners);
 
+  mStateData.mFlagSend = true;
+
   aRunnable->Dispatch(aRv);
   if (aRv.Failed()) {
     // Dispatch() may have spun the event loop and we may have already unrooted.
@@ -1837,6 +1841,7 @@ XMLHttpRequestWorker::SendInternal(SendRunnable* aRunnable,
   if (!autoSyncLoop->Run() && !aRv.Failed()) {
     aRv.Throw(NS_ERROR_FAILURE);
   }
+  mStateData.mFlagSend = false;
 }
 
 bool
@@ -2413,7 +2418,6 @@ XMLHttpRequestWorker::GetResponse(JSContext* /* unused */,
     }
   }
 
-  JS::ExposeValueToActiveJS(mStateData.mResponse);
   aRv = mStateData.mResponseResult;
   aResponse.set(mStateData.mResponse);
 }

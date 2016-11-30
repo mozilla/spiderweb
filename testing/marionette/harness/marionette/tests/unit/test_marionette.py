@@ -3,12 +3,14 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import itertools
+import time
 
-from marionette_driver import errors
 from marionette.marionette_test import MarionetteTestCase
 
+from marionette_driver import errors
 
-class TestMarionetteProperties(MarionetteTestCase):
+
+class TestMarionette(MarionetteTestCase):
 
     def test_correct_test_name(self):
         """Test that the correct test name gets set."""
@@ -20,39 +22,13 @@ class TestMarionetteProperties(MarionetteTestCase):
 
         self.assertEqual(self.marionette.test_name, expected_test_name)
 
-
-class TestProtocol1Errors(MarionetteTestCase):
-    def setUp(self):
-        MarionetteTestCase.setUp(self)
-        self.op = self.marionette.protocol
-        self.marionette.protocol = 1
-
-    def tearDown(self):
-        self.marionette.protocol = self.op
-        MarionetteTestCase.tearDown(self)
-
-    def test_malformed_packet(self):
-        for t in [{}, {"error": None}]:
-            with self.assertRaisesRegexp(errors.MarionetteException, "Malformed packet"):
-                self.marionette._handle_error(t)
-
-    def test_known_error_code(self):
-        with self.assertRaises(errors.NoSuchElementException):
-            self.marionette._handle_error(
-                {"error": {"status": errors.NoSuchElementException.code[0]}})
-
-    def test_known_error_status(self):
-        with self.assertRaises(errors.NoSuchElementException):
-            self.marionette._handle_error(
-                {"error": {"status": errors.NoSuchElementException.status}})
-
-    def test_unknown_error_code(self):
-        with self.assertRaises(errors.MarionetteException):
-            self.marionette._handle_error({"error": {"status": 123456}})
-
-    def test_unknown_error_status(self):
-        with self.assertRaises(errors.MarionetteException):
-            self.marionette._handle_error({"error": {"status": "barbera"}})
+    def test_wait_for_port_non_existing_process(self):
+        """Test that wait_for_port doesn't run into a timeout if instance is not running."""
+        self.marionette.quit()
+        self.assertIsNotNone(self.marionette.instance.runner.returncode)
+        start_time = time.time()
+        self.assertFalse(self.marionette.wait_for_port(timeout=5))
+        self.assertLess(time.time() - start_time, 5)
 
 
 class TestProtocol2Errors(MarionetteTestCase):
@@ -74,24 +50,10 @@ class TestProtocol2Errors(MarionetteTestCase):
         for p in filter(lambda p: len(p) < 3, ps):
             self.assertRaises(KeyError, self.marionette._handle_error, p)
 
-    def test_known_error_code(self):
-        with self.assertRaises(errors.NoSuchElementException):
-            self.marionette._handle_error(
-                {"error": errors.NoSuchElementException.code[0],
-                 "message": None,
-                 "stacktrace": None})
-
     def test_known_error_status(self):
         with self.assertRaises(errors.NoSuchElementException):
             self.marionette._handle_error(
                 {"error": errors.NoSuchElementException.status,
-                 "message": None,
-                 "stacktrace": None})
-
-    def test_unknown_error_code(self):
-        with self.assertRaises(errors.MarionetteException):
-            self.marionette._handle_error(
-                {"error": 123456,
                  "message": None,
                  "stacktrace": None})
 

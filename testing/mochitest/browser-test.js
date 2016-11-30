@@ -104,6 +104,14 @@ function testInit() {
   }
   if (gConfig.e10s) {
     e10s_init();
+
+    let processCount = prefs.getIntPref("dom.ipc.processCount", 1);
+    if (processCount > 1) {
+      // Currently starting a content process is slow, to aviod timeouts, let's
+      // keep alive content processes.
+      prefs.setIntPref("dom.ipc.keepProcessesAlive", processCount);
+    }
+
     let globalMM = Cc["@mozilla.org/globalmessagemanager;1"]
                      .getService(Ci.nsIMessageListenerManager);
     globalMM.loadFrameScript("chrome://mochikit/content/shutdown-leaks-collector.js", true);
@@ -287,7 +295,7 @@ Tester.prototype = {
 
     // Replace the last tab with a fresh one
     if (window.gBrowser) {
-      gBrowser.addTab("about:blank", { skipAnimation: true });
+      let newTab = gBrowser.addTab("about:blank", { skipAnimation: true });
       gBrowser.removeTab(gBrowser.selectedTab, { skipPermitUnload: true });
       gBrowser.stop();
     }
@@ -606,7 +614,7 @@ Tester.prototype = {
             // Run the GC and CC a few times to make sure that as much
             // as possible is freed.
             let numCycles = 3;
-            for (i = 0; i < numCycles; i++) {
+            for (let i = 0; i < numCycles; i++) {
               Cu.forceGC();
               Cu.forceCC();
             }

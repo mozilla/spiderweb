@@ -248,6 +248,7 @@ WidgetShutdownObserver::Unregister()
 void
 nsBaseWidget::Shutdown()
 {
+  RevokeTransactionIdAllocator();
   DestroyCompositor();
   FreeShutdownObserver();
 #if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
@@ -295,6 +296,23 @@ void nsBaseWidget::DestroyCompositor()
   }
 }
 
+// This prevents the layer manager from starting a new transaction during
+// shutdown.
+void
+nsBaseWidget::RevokeTransactionIdAllocator()
+{
+  if (!mLayerManager) {
+    return;
+  }
+
+  ClientLayerManager* clm = mLayerManager->AsClientLayerManager();
+  if (!clm) {
+    return;
+  }
+
+  clm->SetTransactionIdAllocator(nullptr);
+}
+
 void nsBaseWidget::ReleaseContentController()
 {
   if (mRootContentController) {
@@ -313,7 +331,7 @@ void nsBaseWidget::DestroyLayerManager()
 }
 
 void
-nsBaseWidget::OnRenderingDeviceReset()
+nsBaseWidget::OnRenderingDeviceReset(uint64_t aSeqNo)
 {
   if (!mLayerManager || !mCompositorSession) {
     return;
@@ -335,14 +353,9 @@ nsBaseWidget::OnRenderingDeviceReset()
     return;
   }
 
-  RefPtr<CompositorBridgeParent> parent = mCompositorSession->GetInProcessBridge();
-  if (!parent) {
-    return;
-  }
-
   // Recreate the compositor.
   TextureFactoryIdentifier identifier;
-  if (!parent->ResetCompositor(backendHints, &identifier)) {
+  if (!mCompositorSession->Reset(backendHints, aSeqNo, &identifier)) {
     // No action was taken, so we don't have to do anything.
     return;
   }
@@ -352,9 +365,6 @@ nsBaseWidget::OnRenderingDeviceReset()
 
   // Update the texture factory identifier.
   clm->UpdateTextureFactoryIdentifier(identifier);
-  if (ShadowLayerForwarder* lf = clm->AsShadowForwarder()) {
-    lf->IdentifyTextureHost(identifier);
-  }
   ImageBridgeChild::IdentifyCompositorTextureHost(identifier);
   gfx::VRManagerChild::IdentifyTextureHost(identifier);
 }
@@ -378,12 +388,14 @@ nsBaseWidget::~nsBaseWidget()
 {
   IMEStateManager::WidgetDestroyed(this);
 
-  if (mLayerManager &&
-      mLayerManager->GetBackendType() == LayersBackend::LAYERS_BASIC) {
-    static_cast<BasicLayerManager*>(mLayerManager.get())->ClearRetainerWidget();
+  if (mLayerManager) {
+    if (BasicLayerManager* mgr = mLayerManager->AsBasicLayerManager()) {
+      mgr->ClearRetainerWidget();
+    }
   }
 
   FreeShutdownObserver();
+  RevokeTransactionIdAllocator();
   DestroyLayerManager();
 
 #ifdef NOISY_WIDGET_LEAKS
@@ -909,20 +921,21 @@ nsBaseWidget::AutoLayerManagerSetup::AutoLayerManagerSetup(
     BufferMode aDoubleBuffering, ScreenRotation aRotation)
   : mWidget(aWidget)
 {
-  mLayerManager = static_cast<BasicLayerManager*>(mWidget->GetLayerManager());
-  if (mLayerManager) {
-    NS_ASSERTION(mLayerManager->GetBackendType() == LayersBackend::LAYERS_BASIC,
-      "AutoLayerManagerSetup instantiated for non-basic layer backend!");
-    mLayerManager->SetDefaultTarget(aTarget);
-    mLayerManager->SetDefaultTargetConfiguration(aDoubleBuffering, aRotation);
+  LayerManager* lm = mWidget->GetLayerManager();
+  NS_ASSERTION(!lm || lm->GetBackendType() == LayersBackend::LAYERS_BASIC,
+    "AutoLayerManagerSetup instantiated for non-basic layer backend!");
+  if (lm) {
+    mLayerManager = lm->AsBasicLayerManager();
+    if (mLayerManager) {
+      mLayerManager->SetDefaultTarget(aTarget);
+      mLayerManager->SetDefaultTargetConfiguration(aDoubleBuffering, aRotation);
+    }
   }
 }
 
 nsBaseWidget::AutoLayerManagerSetup::~AutoLayerManagerSetup()
 {
   if (mLayerManager) {
-    NS_ASSERTION(mLayerManager->GetBackendType() == LayersBackend::LAYERS_BASIC,
-      "AutoLayerManagerSetup instantiated for non-basic layer backend!");
     mLayerManager->SetDefaultTarget(nullptr);
     mLayerManager->SetDefaultTargetConfiguration(mozilla::layers::BufferMode::BUFFER_NONE, ROTATION_0);
   }
@@ -1332,35 +1345,42 @@ void nsBaseWidget::CreateCompositor(int aWidth, int aHeight)
     mInitialZoomConstraints.reset();
   }
 
-  TextureFactoryIdentifier textureFactoryIdentifier;
-  PLayerTransactionChild* shadowManager = nullptr;
-
-  nsTArray<LayersBackend> backendHints;
-  gfxPlatform::GetPlatform()->GetCompositorBackends(ComputeShouldAccelerate(), backendHints);
-
-  bool success = false;
-  if (!backendHints.IsEmpty()) {
-    shadowManager = mCompositorBridgeChild->SendPLayerTransactionConstructor(
-      backendHints, 0, &textureFactoryIdentifier, &success);
-  }
-
   ShadowLayerForwarder* lf = lm->AsShadowForwarder();
+  // As long as we are creating a ClientLayerManager above lf must be non-null.
+  MOZ_ASSERT(lf);
 
-  if (!success || !lf) {
-    NS_WARNING("Failed to create an OMT compositor.");
-    DestroyCompositor();
-    mLayerManager = nullptr;
-    return;
+  if (lf) {
+    TextureFactoryIdentifier textureFactoryIdentifier;
+    PLayerTransactionChild* shadowManager = nullptr;
+
+    nsTArray<LayersBackend> backendHints;
+    gfxPlatform::GetPlatform()->GetCompositorBackends(ComputeShouldAccelerate(), backendHints);
+
+    bool success = false;
+    if (!backendHints.IsEmpty()) {
+      shadowManager = mCompositorBridgeChild->SendPLayerTransactionConstructor(
+        backendHints, 0, &textureFactoryIdentifier, &success);
+    }
+
+    if (!success) {
+      NS_WARNING("Failed to create an OMT compositor.");
+      DestroyCompositor();
+      mLayerManager = nullptr;
+      return;
+    }
+
+    lf->SetShadowManager(shadowManager);
+    if (ClientLayerManager* clm = lm->AsClientLayerManager()) {
+      clm->UpdateTextureFactoryIdentifier(textureFactoryIdentifier);
+    }
+    // Some popup or transparent widgets may use a different backend than the
+    // compositors used with ImageBridge and VR (and more generally web content).
+    if (WidgetTypeSupportsAcceleration()) {
+      ImageBridgeChild::IdentifyCompositorTextureHost(textureFactoryIdentifier);
+      gfx::VRManagerChild::IdentifyTextureHost(textureFactoryIdentifier);
+    }
   }
 
-  lf->SetShadowManager(shadowManager);
-  lm->UpdateTextureFactoryIdentifier(textureFactoryIdentifier);
-  // Some popup or transparent widgets may use a different backend than the
-  // compositors used with ImageBridge and VR (and more generally web content).
-  if (WidgetTypeSupportsAcceleration()) {
-    ImageBridgeChild::IdentifyCompositorTextureHost(textureFactoryIdentifier);
-    gfx::VRManagerChild::IdentifyTextureHost(textureFactoryIdentifier);
-  }
   WindowUsesOMTC();
 
   mLayerManager = lm.forget();
@@ -1967,9 +1987,8 @@ nsIWidget::SynthesizeNativeTouchTap(LayoutDeviceIntPoint aPoint, bool aLongTap,
   }
 
   if (!aLongTap) {
-    nsresult rv = SynthesizeNativeTouchPoint(pointerId, TOUCH_REMOVE,
-                                             aPoint, 0, 0, nullptr);
-    return rv;
+    return SynthesizeNativeTouchPoint(pointerId, TOUCH_REMOVE,
+                                      aPoint, 0, 0, nullptr);
   }
 
   // initiate a long tap
@@ -3051,6 +3070,8 @@ case _value: eventName.AssignLiteral(_name) ; break
     _ASSIGN_eventName(eDragOver,"eDragOver");
     _ASSIGN_eventName(eEditorInput,"eEditorInput");
     _ASSIGN_eventName(eFocus,"eFocus");
+    _ASSIGN_eventName(eFocusIn,"eFocusIn");
+    _ASSIGN_eventName(eFocusOut,"eFocusOut");
     _ASSIGN_eventName(eFormSelect,"eFormSelect");
     _ASSIGN_eventName(eFormChange,"eFormChange");
     _ASSIGN_eventName(eFormReset,"eFormReset");

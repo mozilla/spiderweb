@@ -10,6 +10,7 @@
 #include "jsprf.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/Preferences.h"
 #include "nsServiceManagerUtils.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIXPConnect.h"
@@ -61,6 +62,10 @@
 #ifdef MOZ_CRASHREPORTER
 #include "nsExceptionHandler.h"
 #include "nsICrashReporter.h"
+#endif
+
+#ifdef ENABLE_TESTS
+#include "xpctest_private.h"
 #endif
 
 using namespace mozilla;
@@ -642,6 +647,24 @@ RegisterAppManifest(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+#ifdef ENABLE_TESTS
+static bool
+RegisterXPCTestComponents(JSContext* cx, unsigned argc, Value* vp)
+{
+    JS::CallArgs args = JS::CallArgsFromVp(argc, vp);
+    if (args.length() != 0) {
+        JS_ReportErrorASCII(cx, "Wrong number of arguments");
+        return false;
+    }
+    nsresult rv = XRE_AddStaticComponent(&kXPCTestModule);
+    if (NS_FAILED(rv)) {
+        XPCThrower::Throw(rv, cx);
+        return false;
+    }
+    return true;
+}
+#endif
+
 static const JSFunctionSpec glob_functions[] = {
     JS_FS("print",           Print,          0,0),
     JS_FS("readline",        ReadLine,       1,0),
@@ -661,6 +684,9 @@ static const JSFunctionSpec glob_functions[] = {
     JS_FS("setInterruptCallback", SetInterruptCallback, 1,0),
     JS_FS("simulateActivityCallback", SimulateActivityCallback, 1,0),
     JS_FS("registerAppManifest", RegisterAppManifest, 1, 0),
+#ifdef ENABLE_TESTS
+    JS_FS("registerXPCTestComponents", RegisterXPCTestComponents, 0, 0),
+#endif
     JS_FS_END
 };
 
@@ -911,7 +937,7 @@ ProcessFile(AutoJSAPI& jsapi, const char* filename, FILE* file, bool forceTTY)
         } while (!JS_BufferIsCompilableUnit(cx, global, buffer, strlen(buffer)));
 
         if (!ProcessLine(jsapi, buffer, startline))
-            jsapi.ClearException(); // Errors from interactive processing are squelched.
+            jsapi.ReportException();
     } while (!hitEOF && !gQuitting);
 
     fprintf(gOutFile, "\n");
@@ -1425,6 +1451,10 @@ XRE_XPCShellMain(int argc, char** argv, char** envp,
             printf("NS_InitXPCOM2 failed!\n");
             return 1;
         }
+
+        // xpc::ErrorReport::LogToConsoleWithStack needs this to print errors
+        // to stderr.
+        Preferences::SetBool("browser.dom.window.dump.enabled", true);
 
         AutoJSAPI jsapi;
         jsapi.Init();

@@ -23,6 +23,7 @@
 #include "nsScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
 
+#include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/CSPDictionariesBinding.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/ToJSValue.h"
@@ -42,11 +43,6 @@ PrincipalOriginAttributes::InheritFromDocShellToDoc(const DocShellOriginAttribut
   // addonId is computed from the principal URI and never propagated
   mUserContextId = aAttrs.mUserContextId;
 
-  // TODO:
-  // Bug 1225349 - PrincipalOriginAttributes should inherit mSignedPkg
-  // accordingly by URI
-  mSignedPkg = aAttrs.mSignedPkg;
-
   mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
   mFirstPartyDomain = aAttrs.mFirstPartyDomain;
 }
@@ -59,7 +55,6 @@ PrincipalOriginAttributes::InheritFromNecko(const NeckoOriginAttributes& aAttrs)
 
   // addonId is computed from the principal URI and never propagated
   mUserContextId = aAttrs.mUserContextId;
-  mSignedPkg = aAttrs.mSignedPkg;
 
   mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
   mFirstPartyDomain = aAttrs.mFirstPartyDomain;
@@ -81,11 +76,6 @@ DocShellOriginAttributes::InheritFromDocToChildDocShell(const PrincipalOriginAtt
   // addonId is computed from the principal URI and never propagated
   mUserContextId = aAttrs.mUserContextId;
 
-  // TODO:
-  // Bug 1225353 - DocShell/NeckoOriginAttributes should inherit
-  // mSignedPkg accordingly by mSignedPkgInBrowser
-  mSignedPkg = aAttrs.mSignedPkg;
-
   mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
   mFirstPartyDomain = aAttrs.mFirstPartyDomain;
 }
@@ -98,10 +88,6 @@ NeckoOriginAttributes::InheritFromDocToNecko(const PrincipalOriginAttributes& aA
 
   // addonId is computed from the principal URI and never propagated
   mUserContextId = aAttrs.mUserContextId;
-
-  // TODO:
-  // Bug 1225353 - DocShell/NeckoOriginAttributes should inherit
-  // mSignedPkg accordingly by mSignedPkgInBrowser
 
   mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
   mFirstPartyDomain = aAttrs.mFirstPartyDomain;
@@ -117,10 +103,6 @@ NeckoOriginAttributes::InheritFromDocShellToNecko(const DocShellOriginAttributes
 
   // addonId is computed from the principal URI and never propagated
   mUserContextId = aAttrs.mUserContextId;
-
-  // TODO:
-  // Bug 1225353 - DocShell/NeckoOriginAttributes should inherit
-  // mSignedPkg accordingly by mSignedPkgInBrowser
 
   mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
 
@@ -182,10 +164,6 @@ OriginAttributes::CreateSuffix(nsACString& aStr) const
     params->Set(NS_LITERAL_STRING("userContextId"), value);
   }
 
-  if (!mSignedPkg.IsEmpty()) {
-    MOZ_RELEASE_ASSERT(mSignedPkg.FindCharInSet(dom::quota::QuotaManager::kReplaceChars) == kNotFound);
-    params->Set(NS_LITERAL_STRING("signedPkg"), mSignedPkg);
-  }
 
   if (mPrivateBrowsingId) {
     value.Truncate();
@@ -212,6 +190,18 @@ OriginAttributes::CreateSuffix(nsACString& aStr) const
   str.Assign(aStr);
   MOZ_ASSERT(str.FindCharInSet(dom::quota::QuotaManager::kReplaceChars) == kNotFound);
 #endif
+}
+
+void
+OriginAttributes::CreateAnonymizedSuffix(nsACString& aStr) const
+{
+  OriginAttributes attrs = *this;
+
+  if (!attrs.mFirstPartyDomain.IsEmpty()) {
+    attrs.mFirstPartyDomain.AssignLiteral("_anonymizedFirstPartyDomain_");
+  }
+
+  attrs.CreateSuffix(aStr);
 }
 
 namespace {
@@ -265,12 +255,6 @@ public:
       NS_ENSURE_TRUE(val <= UINT32_MAX, false);
       mOriginAttributes->mUserContextId  = static_cast<uint32_t>(val);
 
-      return true;
-    }
-
-    if (aName.EqualsLiteral("signedPkg")) {
-      MOZ_RELEASE_ASSERT(mOriginAttributes->mSignedPkg.IsEmpty());
-      mOriginAttributes->mSignedPkg.Assign(aValue);
       return true;
     }
 
@@ -348,11 +332,11 @@ OriginAttributes::SetFromGenericAttributes(const GenericOriginAttributes& aAttrs
   mInIsolatedMozBrowser = aAttrs.mInIsolatedMozBrowser;
   mAddonId = aAttrs.mAddonId;
   mUserContextId = aAttrs.mUserContextId;
-  mSignedPkg = aAttrs.mSignedPkg;
   mPrivateBrowsingId = aAttrs.mPrivateBrowsingId;
   mFirstPartyDomain = aAttrs.mFirstPartyDomain;
 }
 
+/* static */
 bool
 OriginAttributes::IsFirstPartyEnabled()
 {
@@ -395,6 +379,16 @@ bool
 BasePrincipal::Subsumes(nsIPrincipal* aOther, DocumentDomainConsideration aConsideration)
 {
   MOZ_ASSERT(aOther);
+
+  // Expanded principals handle origin attributes for each of their
+  // sub-principals individually, null principals do only simple checks for
+  // pointer equality, and system principals are immune to origin attributes
+  // checks, so only do this check for codebase principals.
+  if (Kind() == eCodebasePrincipal &&
+      OriginAttributesRef() != Cast(aOther)->OriginAttributesRef()) {
+    return false;
+  }
+
   return SubsumesInternal(aOther, aConsideration);
 }
 
@@ -414,6 +408,22 @@ BasePrincipal::EqualsConsideringDomain(nsIPrincipal *aOther, bool *aResult)
   *aResult = Subsumes(aOther, ConsiderDocumentDomain) &&
              Cast(aOther)->Subsumes(this, ConsiderDocumentDomain);
   return NS_OK;
+}
+
+bool
+BasePrincipal::EqualsIgnoringAddonId(nsIPrincipal *aOther)
+{
+  MOZ_ASSERT(aOther);
+
+  // Note that this will not work for expanded principals, nor is it intended
+  // to.
+  if (!dom::ChromeUtils::IsOriginAttributesEqualIgnoringAddonId(
+          OriginAttributesRef(), Cast(aOther)->OriginAttributesRef())) {
+    return false;
+  }
+
+  return SubsumesInternal(aOther, DontConsiderDocumentDomain) &&
+         Cast(aOther)->SubsumesInternal(this, DontConsiderDocumentDomain);
 }
 
 NS_IMETHODIMP
@@ -572,13 +582,6 @@ BasePrincipal::GetIsSystemPrincipal(bool* aResult)
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetJarPrefix(nsACString& aJarPrefix)
-{
-  mozilla::GetJarPrefix(mOriginAttributes.mAppId, mOriginAttributes.mInIsolatedMozBrowser, aJarPrefix);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 BasePrincipal::GetOriginAttributes(JSContext* aCx, JS::MutableHandle<JS::Value> aVal)
 {
   if (NS_WARN_IF(!ToJSValue(aCx, mOriginAttributes, aVal))) {
@@ -597,13 +600,8 @@ BasePrincipal::GetOriginSuffix(nsACString& aOriginAttributes)
 NS_IMETHODIMP
 BasePrincipal::GetAppStatus(uint16_t* aAppStatus)
 {
-  if (AppId() == nsIScriptSecurityManager::UNKNOWN_APP_ID) {
-    NS_WARNING("Asking for app status on a principal with an unknown app id");
-    *aAppStatus = nsIPrincipal::APP_STATUS_NOT_INSTALLED;
-    return NS_OK;
-  }
-
-  *aAppStatus = nsScriptSecurityManager::AppStatusForPrincipal(this);
+  // TODO: Remove GetAppStatus.
+  *aAppStatus = nsIPrincipal::APP_STATUS_NOT_INSTALLED;
   return NS_OK;
 }
 

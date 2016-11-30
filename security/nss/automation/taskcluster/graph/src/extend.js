@@ -16,8 +16,9 @@ const WINDOWS_CHECKOUT_CMD =
 
 queue.filter(task => {
   if (task.group == "Builds") {
-    // Remove extra builds on ASan and ARM.
-    if (task.collection == "asan" || task.collection == "arm-debug") {
+    // Remove extra builds on {A,UB}San and ARM.
+    if (task.collection == "asan" || task.collection == "arm-debug" ||
+        task.collection == "gyp-asan") {
       return false;
     }
 
@@ -40,19 +41,20 @@ queue.filter(task => {
     }
   }
 
+  // GYP builds with -Ddisable_libpkix=1 by default.
+  if ((task.collection == "gyp" || task.collection == "gyp-asan") &&
+      task.tests == "chains") {
+    return false;
+  }
+
   return true;
 });
 
 queue.map(task => {
-  if (task.collection == "asan") {
+  if (task.collection == "asan" || task.collection == "gyp-asan") {
     // CRMF and FIPS tests still leak, unfortunately.
     if (task.tests == "crmf" || task.tests == "fips") {
       task.env.ASAN_OPTIONS = "detect_leaks=0";
-    }
-
-    // SSL(standard) runs on ASan take some time.
-    if (task.tests == "ssl" && task.cycle == "standard") {
-      task.maxRunTime = 7200;
     }
   }
 
@@ -61,6 +63,11 @@ queue.map(task => {
     if (task.tests == "chains" || (task.tests == "ssl" && task.cycle == "standard")) {
       task.maxRunTime = 14400;
     }
+  }
+
+  // Windows is slow.
+  if (task.platform == "windows2012-64" && task.tests == "chains") {
+    task.maxRunTime = 7200;
   }
 
   // Enable TLS 1.3 for every task.
@@ -98,12 +105,44 @@ export default async function main() {
     image: LINUX_IMAGE
   });
 
-  await scheduleLinux("Linux 64 (ASan, debug)", {
+  await scheduleLinux("Linux 64 (debug, gyp)", {
+    command: [
+      "/bin/bash",
+      "-c",
+      "bin/checkout.sh && nss/automation/taskcluster/scripts/build_gyp.sh"
+    ],
+    platform: "linux64",
+    collection: "gyp",
+    image: LINUX_IMAGE
+  });
+
+  await scheduleLinux("Linux 64 (debug, gyp, asan, ubsan)", {
+    command: [
+      "/bin/bash",
+      "-c",
+      "bin/checkout.sh && nss/automation/taskcluster/scripts/build_gyp.sh -g -v --ubsan --asan"
+    ],
     env: {
+      ASAN_OPTIONS: "detect_odr_violation=0", // bug 1316276
+      UBSAN_OPTIONS: "print_stacktrace=1",
       NSS_DISABLE_ARENA_FREE_LIST: "1",
       NSS_DISABLE_UNLOAD: "1",
-      GCC_VERSION: "clang",
-      GXX_VERSION: "clang++",
+      CC: "clang",
+      CCC: "clang++"
+    },
+    platform: "linux64",
+    collection: "gyp-asan",
+    image: LINUX_IMAGE
+  });
+
+  await scheduleLinux("Linux 64 (ASan, debug)", {
+    env: {
+      UBSAN_OPTIONS: "print_stacktrace=1",
+      NSS_DISABLE_ARENA_FREE_LIST: "1",
+      NSS_DISABLE_UNLOAD: "1",
+      CC: "clang",
+      CCC: "clang++",
+      USE_UBSAN: "1",
       USE_ASAN: "1",
       USE_64: "1"
     },
@@ -119,6 +158,10 @@ export default async function main() {
   await scheduleWindows("Windows 2012 64 (debug)", {
     collection: "debug"
   });
+
+  await scheduleFuzzing();
+
+  await scheduleTestBuilds();
 
   await scheduleTools();
 
@@ -137,7 +180,7 @@ export default async function main() {
 
 async function scheduleLinux(name, base) {
   // Build base definition.
-  let build_base = merge(base, {
+  let build_base = merge({
     command: [
       "/bin/bash",
       "-c",
@@ -152,7 +195,7 @@ async function scheduleLinux(name, base) {
     },
     kind: "build",
     symbol: "B"
-  });
+  }, base);
 
   // The task that builds NSPR+NSS.
   let task_build = queue.scheduleTask(merge(build_base, {name}));
@@ -183,8 +226,8 @@ async function scheduleLinux(name, base) {
   queue.scheduleTask(merge(extra_base, {
     name: `${name} w/ clang-3.9`,
     env: {
-      GCC_VERSION: "clang",
-      GXX_VERSION: "clang++"
+      CC: "clang",
+      CCC: "clang++",
     },
     symbol: "clang-3.9"
   }));
@@ -192,8 +235,8 @@ async function scheduleLinux(name, base) {
   queue.scheduleTask(merge(extra_base, {
     name: `${name} w/ gcc-4.8`,
     env: {
-      GCC_VERSION: "gcc-4.8",
-      GXX_VERSION: "g++-4.8"
+      CC: "gcc-4.8",
+      CCC: "g++-4.8"
     },
     symbol: "gcc-4.8"
   }));
@@ -201,8 +244,8 @@ async function scheduleLinux(name, base) {
   queue.scheduleTask(merge(extra_base, {
     name: `${name} w/ gcc-6.1`,
     env: {
-      GCC_VERSION: "gcc-6",
-      GXX_VERSION: "g++-6"
+      CC: "gcc-6",
+      CCC: "g++-6"
     },
     symbol: "gcc-6.1"
   }));
@@ -215,6 +258,149 @@ async function scheduleLinux(name, base) {
 
   return queue.submit();
 }
+
+/*****************************************************************************/
+
+async function scheduleFuzzing() {
+  let base = {
+    env: {
+       // bug 1316276
+      ASAN_OPTIONS: "allocator_may_return_null=1:detect_odr_violation=0",
+      UBSAN_OPTIONS: "print_stacktrace=1",
+      NSS_DISABLE_ARENA_FREE_LIST: "1",
+      NSS_DISABLE_UNLOAD: "1",
+      CC: "clang",
+      CCC: "clang++"
+    },
+    platform: "linux64",
+    collection: "fuzz",
+    image: LINUX_IMAGE
+  };
+
+  // Build base definition.
+  let build_base = merge({
+    command: [
+      "/bin/bash",
+      "-c",
+      "bin/checkout.sh && " +
+      "nss/automation/taskcluster/scripts/build_gyp.sh -g -v --fuzz"
+    ],
+    artifacts: {
+      public: {
+        expires: 24 * 7,
+        type: "directory",
+        path: "/home/worker/artifacts"
+      }
+    },
+    kind: "build",
+    symbol: "B"
+  }, base);
+
+  // The task that builds NSPR+NSS.
+  let task_build = queue.scheduleTask(merge(build_base, {
+    name: "Linux x64 (debug, fuzz)"
+  }));
+
+  // Schedule tests.
+  queue.scheduleTask(merge(base, {
+    parent: task_build,
+    name: "Gtests",
+    command: [
+      "/bin/bash",
+      "-c",
+      "bin/checkout.sh && nss/automation/taskcluster/scripts/run_tests.sh"
+    ],
+    env: {GTESTFILTER: "*Fuzz*"},
+    tests: "ssl_gtests gtests",
+    cycle: "standard",
+    symbol: "Gtest",
+    kind: "test"
+  }));
+
+  queue.scheduleTask(merge(base, {
+    parent: task_build,
+    name: "Cert",
+    command: [
+      "/bin/bash",
+      "-c",
+      "bin/checkout.sh && nss/automation/taskcluster/scripts/fuzz.sh " +
+        "cert nss/fuzz/corpus/cert -max_total_time=300"
+    ],
+    // Need a privileged docker container to remove this.
+    env: {ASAN_OPTIONS: "detect_leaks=0"},
+    symbol: "SCert",
+    kind: "test"
+  }));
+
+  queue.scheduleTask(merge(base, {
+    parent: task_build,
+    name: "SPKI",
+    command: [
+      "/bin/bash",
+      "-c",
+      "bin/checkout.sh && nss/automation/taskcluster/scripts/fuzz.sh " +
+        "spki nss/fuzz/corpus/spki -max_total_time=300"
+    ],
+    // Need a privileged docker container to remove this.
+    env: {ASAN_OPTIONS: "detect_leaks=0"},
+    symbol: "SPKI",
+    kind: "test"
+  }));
+
+  return queue.submit();
+}
+
+/*****************************************************************************/
+
+async function scheduleTestBuilds() {
+  let base = {
+    platform: "linux64",
+    collection: "gyp",
+    group: "Test",
+    image: LINUX_IMAGE
+  };
+
+  // Build base definition.
+  let build = merge({
+    command: [
+      "/bin/bash",
+      "-c",
+      "bin/checkout.sh && " +
+      "nss/automation/taskcluster/scripts/build_gyp.sh -g -v --test"
+    ],
+    artifacts: {
+      public: {
+        expires: 24 * 7,
+        type: "directory",
+        path: "/home/worker/artifacts"
+      }
+    },
+    kind: "build",
+    symbol: "B",
+    name: "Linux 64 (debug, gyp, test)"
+  }, base);
+
+  // The task that builds NSPR+NSS.
+  let task_build = queue.scheduleTask(build);
+
+  // Schedule tests.
+  queue.scheduleTask(merge(base, {
+    parent: task_build,
+    name: "mpi",
+    command: [
+      "/bin/bash",
+      "-c",
+      "bin/checkout.sh && nss/automation/taskcluster/scripts/run_tests.sh"
+    ],
+    tests: "mpi",
+    cycle: "standard",
+    symbol: "mpi",
+    kind: "test"
+  }));
+
+  return queue.submit();
+}
+
 
 /*****************************************************************************/
 
@@ -365,8 +551,8 @@ async function scheduleTools() {
     name: "scan-build-3.9",
     env: {
       USE_64: "1",
-      GCC_VERSION: "clang",
-      GXX_VERSION: "clang++"
+      CC: "clang",
+      CCC: "clang++",
     },
     artifacts: {
       public: {

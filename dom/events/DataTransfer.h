@@ -18,11 +18,11 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
+#include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/File.h"
 
 class nsINode;
 class nsITransferable;
-class nsISupportsArray;
 class nsILoadContext;
 
 namespace mozilla {
@@ -136,31 +136,31 @@ public:
   void SetDragImage(Element& aElement, int32_t aX, int32_t aY,
                     ErrorResult& aRv);
 
-  already_AddRefed<DOMStringList> GetTypes(ErrorResult& rv) const;
+  void GetTypes(nsTArray<nsString>& aTypes, CallerType aCallerType) const;
 
   void GetData(const nsAString& aFormat, nsAString& aData,
-               const Maybe<nsIPrincipal*>& aSubjectPrincipal,
+               nsIPrincipal& aSubjectPrincipal,
                ErrorResult& aRv);
 
   void SetData(const nsAString& aFormat, const nsAString& aData,
-               const Maybe<nsIPrincipal*>& aSubjectPrincipal,
+               nsIPrincipal& aSubjectPrincipal,
                ErrorResult& aRv);
 
   void ClearData(const mozilla::dom::Optional<nsAString>& aFormat,
-                 const Maybe<nsIPrincipal*>& aSubjectPrincipal,
+                 nsIPrincipal& aSubjectPrincipal,
                  mozilla::ErrorResult& aRv);
 
   already_AddRefed<FileList>
-  GetFiles(const Maybe<nsIPrincipal*>& aSubjectPrincipal,
+  GetFiles(nsIPrincipal& aSubjectPrincipal,
            mozilla::ErrorResult& aRv);
 
   already_AddRefed<Promise>
-  GetFilesAndDirectories(const Maybe<nsIPrincipal*>& aSubjectPrincipal,
+  GetFilesAndDirectories(nsIPrincipal& aSubjectPrincipal,
                          mozilla::ErrorResult& aRv);
 
   already_AddRefed<Promise>
   GetFiles(bool aRecursiveFlag,
-           const Maybe<nsIPrincipal*>& aSubjectPrincipal,
+           nsIPrincipal& aSubjectPrincipal,
            ErrorResult& aRv);
 
 
@@ -178,20 +178,21 @@ public:
   }
 
   already_AddRefed<DOMStringList> MozTypesAt(uint32_t aIndex,
+                                             CallerType aCallerType,
                                              mozilla::ErrorResult& aRv) const;
 
   void MozClearDataAt(const nsAString& aFormat, uint32_t aIndex,
-                      const Maybe<nsIPrincipal*>& aSubjectPrincipal,
+                      nsIPrincipal& aSubjectPrincipal,
                       mozilla::ErrorResult& aRv);
 
   void MozSetDataAt(JSContext* aCx, const nsAString& aFormat,
                     JS::Handle<JS::Value> aData, uint32_t aIndex,
-                    const Maybe<nsIPrincipal*>& aSubjectPrincipal,
+                    nsIPrincipal& aSubjectPrincipal,
                     mozilla::ErrorResult& aRv);
 
   void MozGetDataAt(JSContext* aCx, const nsAString& aFormat,
                     uint32_t aIndex, JS::MutableHandle<JS::Value> aRetval,
-                    const Maybe<nsIPrincipal*>& aSubjectPrincipal,
+                    nsIPrincipal& aSubjectPrincipal,
                     mozilla::ErrorResult& aRv);
 
   bool MozUserCancelled() const
@@ -234,9 +235,9 @@ public:
 
   // converts the data into an array of nsITransferable objects to be used for
   // drag and drop or clipboard operations.
-  already_AddRefed<nsISupportsArray> GetTransferables(nsIDOMNode* aDragTarget);
+  already_AddRefed<nsIArray> GetTransferables(nsIDOMNode* aDragTarget);
 
-  already_AddRefed<nsISupportsArray>
+  already_AddRefed<nsIArray>
   GetTransferables(nsILoadContext* aLoadContext);
 
   // converts the data for a single item at aIndex into an nsITransferable
@@ -289,6 +290,11 @@ public:
                                   nsIVariant* aData,
                                   nsIPrincipal* aPrincipal);
 
+  // Notify the DataTransfer that the list returned from GetTypes may have
+  // changed.  This can happen due to items we care about for purposes of
+  // GetTypes being added or removed or changing item kinds.
+  void TypesListMayHaveChanged();
+
 protected:
 
   // caches text and uri-list data formats that exist in the drag service or
@@ -321,7 +327,7 @@ protected:
                                  nsIPrincipal* aPrincipal);
 
   void MozClearDataAtHelper(const nsAString& aFormat, uint32_t aIndex,
-                            const Maybe<nsIPrincipal*>& aSubjectPrincipal,
+                            nsIPrincipal& aSubjectPrincipal,
                             mozilla::ErrorResult& aRv);
 
   nsCOMPtr<nsISupports> mParent;

@@ -58,14 +58,9 @@ ImportantStyleData::List(FILE* out, int32_t aIndent) const
 }
 #endif
 
-Declaration::Declaration()
-  : mImmutable(false)
-{
-  mContainer.mRaw = uintptr_t(0);
-}
-
 Declaration::Declaration(const Declaration& aCopy)
-  : mOrder(aCopy.mOrder),
+  : DeclarationBlock(aCopy),
+    mOrder(aCopy.mOrder),
     mVariableOrder(aCopy.mVariableOrder),
     mData(aCopy.mData ? aCopy.mData->Clone() : nullptr),
     mImportantData(aCopy.mImportantData ?
@@ -75,10 +70,8 @@ Declaration::Declaration(const Declaration& aCopy)
         nullptr),
     mImportantVariables(aCopy.mImportantVariables ?
         new CSSVariableDeclarations(*aCopy.mImportantVariables) :
-        nullptr),
-    mImmutable(false)
+        nullptr)
 {
-  mContainer.mRaw = uintptr_t(0);
 }
 
 Declaration::~Declaration()
@@ -123,7 +116,7 @@ Declaration::MightMapInheritedStyleData()
 Declaration::GetDiscretelyAnimatedCSSValue(nsCSSPropertyID aProperty,
                                            nsCSSValue* aValue)
 {
-  nsCSSCompressedDataBlock* data = GetValueIsImportant(aProperty)
+  nsCSSCompressedDataBlock* data = GetPropertyIsImportantByID(aProperty)
                                    ? mImportantData : mData;
   const nsCSSValue* value = data->ValueFor(aProperty);
   if (!value) {
@@ -158,8 +151,69 @@ Declaration::ValueAppended(nsCSSPropertyID aProperty)
   mOrder.AppendElement(static_cast<uint32_t>(aProperty));
 }
 
+template<typename PropFunc, typename CustomPropFunc>
+inline void
+DispatchPropertyOperation(const nsAString& aProperty,
+                          PropFunc aPropFunc, CustomPropFunc aCustomPropFunc)
+{
+  nsCSSPropertyID propID =
+    nsCSSProps::LookupProperty(aProperty, CSSEnabledState::eForAllContent);
+  if (propID != eCSSProperty_UNKNOWN) {
+    if (propID != eCSSPropertyExtra_variable) {
+      aPropFunc(propID);
+    } else {
+      aCustomPropFunc(Substring(aProperty, CSS_CUSTOM_NAME_PREFIX_LENGTH));
+    }
+  }
+}
+
 void
-Declaration::RemoveProperty(nsCSSPropertyID aProperty)
+Declaration::GetPropertyValue(const nsAString& aProperty,
+                              nsAString& aValue) const
+{
+  DispatchPropertyOperation(aProperty,
+    [&](nsCSSPropertyID propID) { GetPropertyValueByID(propID, aValue); },
+    [&](const nsAString& name) { GetVariableValue(name, aValue); });
+}
+
+void
+Declaration::GetPropertyValueByID(nsCSSPropertyID aPropID,
+                                  nsAString& aValue) const
+{
+  GetPropertyValueInternal(aPropID, aValue, nsCSSValue::eNormalized);
+}
+
+void
+Declaration::GetAuthoredPropertyValue(const nsAString& aProperty,
+                                      nsAString& aValue) const
+{
+  DispatchPropertyOperation(aProperty,
+    [&](nsCSSPropertyID propID) {
+      GetPropertyValueInternal(propID, aValue, nsCSSValue::eAuthorSpecified);
+    },
+    [&](const nsAString& name) { GetVariableValue(name, aValue); });
+}
+
+bool
+Declaration::GetPropertyIsImportant(const nsAString& aProperty) const
+{
+  bool r = false;
+  DispatchPropertyOperation(aProperty,
+    [&](nsCSSPropertyID propID) { r = GetPropertyIsImportantByID(propID); },
+    [&](const nsAString& name) { r = GetVariableIsImportant(name); });
+  return r;
+}
+
+void
+Declaration::RemoveProperty(const nsAString& aProperty)
+{
+  DispatchPropertyOperation(aProperty,
+    [&](nsCSSPropertyID propID) { RemovePropertyByID(propID); },
+    [&](const nsAString& name) { RemoveVariable(name); });
+}
+
+void
+Declaration::RemovePropertyByID(nsCSSPropertyID aProperty)
 {
   MOZ_ASSERT(0 <= aProperty && aProperty < eCSSProperty_COUNT);
 
@@ -187,7 +241,7 @@ Declaration::HasProperty(nsCSSPropertyID aProperty) const
   MOZ_ASSERT(0 <= aProperty && aProperty < eCSSProperty_COUNT_no_shorthands,
              "property ID out of range");
 
-  nsCSSCompressedDataBlock *data = GetValueIsImportant(aProperty)
+  nsCSSCompressedDataBlock *data = GetPropertyIsImportantByID(aProperty)
                                       ? mImportantData : mData;
   const nsCSSValue *val = data->ValueFor(aProperty);
   return !!val;
@@ -201,7 +255,7 @@ Declaration::AppendValueToString(nsCSSPropertyID aProperty,
   MOZ_ASSERT(0 <= aProperty && aProperty < eCSSProperty_COUNT_no_shorthands,
              "property ID out of range");
 
-  nsCSSCompressedDataBlock *data = GetValueIsImportant(aProperty)
+  nsCSSCompressedDataBlock *data = GetPropertyIsImportantByID(aProperty)
                                       ? mImportantData : mData;
   const nsCSSValue *val = data->ValueFor(aProperty);
   if (!val) {
@@ -210,18 +264,6 @@ Declaration::AppendValueToString(nsCSSPropertyID aProperty,
 
   val->AppendToString(aProperty, aResult, aSerialization);
   return true;
-}
-
-void
-Declaration::GetValue(nsCSSPropertyID aProperty, nsAString& aValue) const
-{
-  GetValue(aProperty, aValue, nsCSSValue::eNormalized);
-}
-
-void
-Declaration::GetAuthoredValue(nsCSSPropertyID aProperty, nsAString& aValue) const
-{
-  GetValue(aProperty, aValue, nsCSSValue::eAuthorSpecified);
 }
 
 static void
@@ -496,8 +538,9 @@ Declaration::GetImageLayerPositionValue(
 }
 
 void
-Declaration::GetValue(nsCSSPropertyID aProperty, nsAString& aValue,
-                      nsCSSValue::Serialization aSerialization) const
+Declaration::GetPropertyValueInternal(
+    nsCSSPropertyID aProperty, nsAString& aValue,
+    nsCSSValue::Serialization aSerialization) const
 {
   aValue.Truncate(0);
 
@@ -1507,23 +1550,7 @@ Declaration::GetValue(nsCSSPropertyID aProperty, nsAString& aValue,
 }
 
 bool
-Declaration::GetValueIsImportant(const nsAString& aProperty) const
-{
-  nsCSSPropertyID propID = nsCSSProps::
-    LookupProperty(aProperty, CSSEnabledState::eIgnoreEnabledState);
-  if (propID == eCSSProperty_UNKNOWN) {
-    return false;
-  }
-  if (propID == eCSSPropertyExtra_variable) {
-    const nsSubstring& variableName =
-      Substring(aProperty, CSS_CUSTOM_NAME_PREFIX_LENGTH);
-    return GetVariableValueIsImportant(variableName);
-  }
-  return GetValueIsImportant(propID);
-}
-
-bool
-Declaration::GetValueIsImportant(nsCSSPropertyID aProperty) const
+Declaration::GetPropertyIsImportantByID(nsCSSPropertyID aProperty) const
 {
   if (!mImportantData)
     return false;
@@ -1562,8 +1589,8 @@ Declaration::AppendPropertyAndValueToString(nsCSSPropertyID aProperty,
     AppendValueToString(aProperty, aResult, nsCSSValue::eNormalized);
   else
     aResult.Append(aValue);
-  if (GetValueIsImportant(aProperty)) {
-    aResult.AppendLiteral(" ! important");
+  if (GetPropertyIsImportantByID(aProperty)) {
+    aResult.AppendLiteral(" !important");
   }
   aResult.AppendLiteral("; ");
 }
@@ -1616,7 +1643,7 @@ Declaration::AppendVariableAndValueToString(const nsAString& aName,
   }
 
   if (important) {
-    aResult.AppendLiteral("! important");
+    aResult.AppendLiteral("!important");
   }
   aResult.AppendLiteral("; ");
 }
@@ -1629,7 +1656,8 @@ Declaration::ToString(nsAString& aString) const
   SetImmutable();
 
   nsCSSCompressedDataBlock *systemFontData =
-    GetValueIsImportant(eCSSProperty__x_system_font) ? mImportantData : mData;
+    GetPropertyIsImportantByID(eCSSProperty__x_system_font) ? mImportantData
+                                                            : mData;
   const nsCSSValue *systemFont =
     systemFontData->ValueFor(eCSSProperty__x_system_font);
   const bool haveSystemFont = systemFont &&
@@ -1678,7 +1706,7 @@ Declaration::ToString(nsAString& aString) const
       // least, which is exactly the order we want to test them.
       nsCSSPropertyID shorthand = *shorthands;
 
-      GetValue(shorthand, value);
+      GetPropertyValueByID(shorthand, value);
 
       // in the system font case, skip over font-variant shorthand, since all
       // subproperties are already dealt with via the font shorthand
@@ -1687,8 +1715,8 @@ Declaration::ToString(nsAString& aString) const
         continue;
       }
 
-      // If GetValue gives us a non-empty string back, we can use that
-      // value; otherwise it's not possible to use this shorthand.
+      // If GetPropertyValueByID gives us a non-empty string back, we can
+      // use that value; otherwise it's not possible to use this shorthand.
       if (!value.IsEmpty()) {
         AppendPropertyAndValueToString(shorthand, value, aString);
         shorthandsUsed.AppendElement(shorthand);
@@ -1785,19 +1813,6 @@ Declaration::InitializeEmpty()
   mData = nsCSSCompressedDataBlock::CreateEmptyBlock();
 }
 
-already_AddRefed<Declaration>
-Declaration::EnsureMutable()
-{
-  MOZ_ASSERT(mData, "should only be called when not expanded");
-  RefPtr<Declaration> result;
-  if (!IsMutable()) {
-    result = new Declaration(*this);
-  } else {
-    result = this;
-  }
-  return result.forget();
-}
-
 size_t
 Declaration::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 {
@@ -1815,8 +1830,7 @@ Declaration::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
 }
 
 void
-Declaration::GetVariableDeclaration(const nsAString& aName,
-                                    nsAString& aValue) const
+Declaration::GetVariableValue(const nsAString& aName, nsAString& aValue) const
 {
   aValue.Truncate();
 
@@ -1849,11 +1863,11 @@ Declaration::GetVariableDeclaration(const nsAString& aName,
 }
 
 void
-Declaration::AddVariableDeclaration(const nsAString& aName,
-                                    CSSVariableDeclarations::Type aType,
-                                    const nsString& aValue,
-                                    bool aIsImportant,
-                                    bool aOverrideImportant)
+Declaration::AddVariable(const nsAString& aName,
+                         CSSVariableDeclarations::Type aType,
+                         const nsString& aValue,
+                         bool aIsImportant,
+                         bool aOverrideImportant)
 {
   MOZ_ASSERT(IsMutable());
 
@@ -1917,7 +1931,7 @@ Declaration::AddVariableDeclaration(const nsAString& aName,
 }
 
 void
-Declaration::RemoveVariableDeclaration(const nsAString& aName)
+Declaration::RemoveVariable(const nsAString& aName)
 {
   if (mVariables) {
     mVariables->Remove(aName);
@@ -1932,7 +1946,7 @@ Declaration::RemoveVariableDeclaration(const nsAString& aName)
 }
 
 bool
-Declaration::GetVariableValueIsImportant(const nsAString& aName) const
+Declaration::GetVariableIsImportant(const nsAString& aName) const
 {
   return mImportantVariables && mImportantVariables->Has(aName);
 }

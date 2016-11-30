@@ -24,8 +24,9 @@ var gTests = [
     is(PopupNotifications.getNotification("webRTC-shareDevices").anchorID,
        "webRTC-shareDevices-notification-icon", "anchored to device icon");
     checkDeviceSelectors(true, true);
-    is(PopupNotifications.panel.firstChild.getAttribute("popupid"),
-       "webRTC-shareDevices", "panel using devices icon");
+    let iconclass =
+      PopupNotifications.panel.firstChild.getAttribute("iconclass");
+    ok(iconclass.includes("camera-icon"), "panel using devices icon");
 
     let indicator = promiseIndicatorWindow();
     yield promiseMessage("ok", () => {
@@ -53,8 +54,9 @@ var gTests = [
     is(PopupNotifications.getNotification("webRTC-shareDevices").anchorID,
        "webRTC-shareMicrophone-notification-icon", "anchored to mic icon");
     checkDeviceSelectors(true);
-    is(PopupNotifications.panel.firstChild.getAttribute("popupid"),
-       "webRTC-shareMicrophone", "panel using microphone icon");
+    let iconclass =
+      PopupNotifications.panel.firstChild.getAttribute("iconclass");
+    ok(iconclass.includes("microphone-icon"), "panel using microphone icon");
 
     let indicator = promiseIndicatorWindow();
     yield promiseMessage("ok", () => {
@@ -82,8 +84,9 @@ var gTests = [
     is(PopupNotifications.getNotification("webRTC-shareDevices").anchorID,
        "webRTC-shareDevices-notification-icon", "anchored to device icon");
     checkDeviceSelectors(false, true);
-    is(PopupNotifications.panel.firstChild.getAttribute("popupid"),
-       "webRTC-shareDevices", "panel using devices icon");
+    let iconclass =
+      PopupNotifications.panel.firstChild.getAttribute("iconclass");
+    ok(iconclass.includes("camera-icon"), "panel using devices icon");
 
     let indicator = promiseIndicatorWindow();
     yield promiseMessage("ok", () => {
@@ -171,10 +174,6 @@ var gTests = [
     promise = promiseObserverCalled("recording-device-events");
     content.location.reload();
     yield promise;
-
-    if ((yield promiseTodoObserverNotCalled("recording-device-events")) == 1) {
-      todo(false, "Got the 'recording-device-events' notification twice, likely because of bug 962719");
-    }
 
     yield expectObserverCalled("recording-window-ended");
     yield expectNoObserverCalled();
@@ -475,7 +474,7 @@ var gTests = [
 },
 
 {
-  desc: "'Always Allow' ignored and not shown on http pages",
+  desc: "'Always Allow' disabled on http pages",
   run: function* checkNoAlwaysOnHttp() {
     // Load an http page instead of the https version.
     let browser = gBrowser.selectedBrowser;
@@ -495,16 +494,16 @@ var gTests = [
     yield promise;
     yield expectObserverCalled("getUserMedia:request");
 
-    // Ensure that the 'Always Allow' action isn't shown.
-    let alwaysLabel = gNavigatorBundle.getString("getUserMedia.always.label");
-    ok(!!alwaysLabel, "found the 'Always Allow' localized label");
-    let labels = [];
+    // Ensure that checking the 'Remember this decision' checkbox disables
+    // 'Allow'.
     let notification = PopupNotifications.panel.firstChild;
-    for (let node of notification.childNodes) {
-      if (node.localName == "menuitem")
-        labels.push(node.getAttribute("label"));
-    }
-    is(labels.indexOf(alwaysLabel), -1, "The 'Always Allow' item isn't shown");
+    let checkbox = notification.checkbox;
+    ok(!!checkbox, "checkbox is present");
+    ok(!checkbox.checked, "checkbox is not checked");
+    checkbox.click();
+    ok(checkbox.checked, "checkbox now checked");
+    ok(notification.button.disabled, "Allow button is disabled");
+    ok(!notification.hasAttribute("warninghidden"), "warning message is shown");
 
     // Cleanup.
     yield closeStream(true);
@@ -535,9 +534,9 @@ function test() {
     Task.spawn(function* () {
       yield SpecialPowers.pushPrefEnv({"set": [[PREF_PERMISSION_FAKE, true]]});
 
-      for (let test of gTests) {
-        info(test.desc);
-        yield test.run();
+      for (let testCase of gTests) {
+        info(testCase.desc);
+        yield testCase.run();
 
         // Cleanup before the next test
         yield expectNoObserverCalled();

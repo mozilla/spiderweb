@@ -559,7 +559,7 @@ nsComputedDOMStyle::GetPresShellForContent(nsIContent* aContent)
 // nsDOMCSSDeclaration abstract methods which should never be called
 // on a nsComputedDOMStyle object, but must be defined to avoid
 // compile errors.
-css::Declaration*
+DeclarationBlock*
 nsComputedDOMStyle::GetCSSDeclaration(Operation)
 {
   NS_RUNTIMEABORT("called nsComputedDOMStyle::GetCSSDeclaration");
@@ -567,7 +567,7 @@ nsComputedDOMStyle::GetCSSDeclaration(Operation)
 }
 
 nsresult
-nsComputedDOMStyle::SetCSSDeclaration(css::Declaration*)
+nsComputedDOMStyle::SetCSSDeclaration(DeclarationBlock*)
 {
   NS_RUNTIMEABORT("called nsComputedDOMStyle::SetCSSDeclaration");
   return NS_ERROR_FAILURE;
@@ -2082,7 +2082,15 @@ nsComputedDOMStyle::SetValueToStyleImage(const nsStyleImage& aStyleImage,
   switch (aStyleImage.GetType()) {
     case eStyleImageType_Image:
     {
-      imgIRequest *req = aStyleImage.GetImageData();
+      imgIRequest* req = aStyleImage.GetImageData();
+      if (!req) {
+        // XXXheycam If we had some problem resolving the imgRequestProxy,
+        // maybe we should just use the URL stored in the nsStyleImage's
+        // mImageValue?  (Similarly in DoGetListStyleImage.)
+        aValue->SetIdent(eCSSKeyword_none);
+        break;
+      }
+
       nsCOMPtr<nsIURI> uri;
       req->GetURI(getter_AddRefs(uri));
 
@@ -2143,10 +2151,11 @@ nsComputedDOMStyle::DoGetImageLayerImage(const nsStyleImageLayers& aLayers)
     //    Instead, we store the local URI in one place -- on Layer::mSourceURI.
     //    Hence, we must serialize using mSourceURI (instead of
     //    SetValueToStyleImage()/mImage) in this case.
-    if (aLayers.mLayers[i].mSourceURI.IsLocalRef()) {
+    if (aLayers.mLayers[i].mSourceURI &&
+        aLayers.mLayers[i].mSourceURI->IsLocalRef()) {
       // This is how we represent a 'mask-image' reference for a local URI,
       // such as 'mask-image:url(#mymask)' or 'mask:url(#mymask)'
-      SetValueToFragmentOrURL(&aLayers.mLayers[i].mSourceURI, val);
+      SetValueToURLValue(aLayers.mLayers[i].mSourceURI, val);
     } else {
       SetValueToStyleImage(image, val);
     }
@@ -2387,24 +2396,32 @@ nsComputedDOMStyle::SetValueToPosition(
 
 
 void
-nsComputedDOMStyle::SetValueToFragmentOrURL(
-    const FragmentOrURL* aFragmentOrURL,
-    nsROCSSPrimitiveValue* aValue)
+nsComputedDOMStyle::SetValueToURLValue(const css::URLValueData* aURL,
+                                       nsROCSSPrimitiveValue* aValue)
 {
-  if (aFragmentOrURL->IsLocalRef()) {
-    nsString fragment;
-    aFragmentOrURL->GetSourceString(fragment);
-    fragment.Insert(u"url(\"", 0);
-    fragment.Append(u"\")");
-    aValue->SetString(fragment);
-  } else {
-    nsCOMPtr<nsIURI> url = aFragmentOrURL->GetSourceURL();
-    if (url) {
-      aValue->SetURI(url);
-    } else {
-      aValue->SetIdent(eCSSKeyword_none);
+  if (!aURL) {
+    aValue->SetIdent(eCSSKeyword_none);
+    return;
+  }
+
+  // If we have a usable nsIURI in the URLValueData, and the url() wasn't
+  // a fragment-only URL, serialize the nsIURI.
+  if (!aURL->IsLocalRef()) {
+    if (nsIURI* uri = aURL->GetURI()) {
+      aValue->SetURI(uri);
+      return;
     }
   }
+
+  // Otherwise, serialize the specified URL value.
+  nsAutoString source;
+  aURL->GetSourceString(source);
+
+  nsAutoString url;
+  url.AppendLiteral(u"url(");
+  nsStyleUtil::AppendEscapedCSSString(source, url, '"');
+  url.Append(')');
+  aValue->SetString(url);
 }
 
 already_AddRefed<CSSValue>
@@ -2548,6 +2565,15 @@ nsComputedDOMStyle::GetGridTrackSize(const nsStyleCoord& aMinValue,
     RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
     SetValueToCoord(val, aMinValue, true,
                     nullptr, nsCSSProps::kGridTrackBreadthKTable);
+    return val.forget();
+  }
+
+  // minmax(auto, <flex>) is equivalent to (and is our internal representation
+  // of) <flex>, and both compute to <flex>
+  if (aMinValue.GetUnit() == eStyleUnit_Auto &&
+      aMaxValue.GetUnit() == eStyleUnit_FlexFraction) {
+    RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
+    SetValueToCoord(val, aMaxValue, true);
     return val.forget();
   }
 
@@ -3166,14 +3192,6 @@ nsComputedDOMStyle::DoGetMarginRightWidth()
 }
 
 already_AddRefed<CSSValue>
-nsComputedDOMStyle::DoGetMarkerOffset()
-{
-  RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  SetValueToCoord(val, StyleContent()->mMarkerOffset, false);
-  return val.forget();
-}
-
-already_AddRefed<CSSValue>
 nsComputedDOMStyle::DoGetOrient()
 {
   RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
@@ -3495,13 +3513,16 @@ nsComputedDOMStyle::DoGetListStyleImage()
 
   const nsStyleList* list = StyleList();
 
-  if (!list->GetListStyleImage()) {
+  // XXXheycam As in SetValueToStyleImage, we might want to use the
+  // URL stored in the nsStyleImageRequest's mImageValue if we
+  // failed to resolve the imgRequestProxy.
+
+  imgRequestProxy* image = list->GetListStyleImage();
+  if (!image) {
     val->SetIdent(eCSSKeyword_none);
   } else {
     nsCOMPtr<nsIURI> uri;
-    if (list->GetListStyleImage()) {
-      list->GetListStyleImage()->GetURI(getter_AddRefs(uri));
-    }
+    image->GetURI(getter_AddRefs(uri));
     val->SetURI(uri);
   }
 
@@ -4108,11 +4129,8 @@ nsComputedDOMStyle::DoGetCursor()
   for (const nsCursorImage& item : ui->mCursorImages) {
     RefPtr<nsDOMCSSValueList> itemList = GetROCSSValueList(false);
 
-    nsCOMPtr<nsIURI> uri;
-    item.GetImage()->GetURI(getter_AddRefs(uri));
-
     RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-    val->SetURI(uri);
+    SetValueToURLValue(item.mImage->GetImageValue(), val);
     itemList->AppendCSSValue(val.forget());
 
     if (item.mHaveHotspot) {
@@ -4868,17 +4886,47 @@ nsComputedDOMStyle::DoGetMaxWidth()
   return val.forget();
 }
 
+bool
+nsComputedDOMStyle::ShouldHonorMinSizeAutoInAxis(PhysicalAxis aAxis)
+{
+  // A {flex,grid} item's min-{width|height} "auto" value gets special
+  // treatment in getComputedStyle().
+  // https://drafts.csswg.org/css-flexbox-1/#valdef-min-width-auto
+  // https://drafts.csswg.org/css-grid/#min-size-auto
+  // In most cases, "min-{width|height}: auto" is mapped to "0px", unless
+  // we're a flex item (and the min-size is in the flex container's main
+  // axis), or we're a grid item, AND we also have overflow:visible.
+
+  // Note: We only need to bother checking one "overflow" subproperty for
+  // "visible", because a non-"visible" value in either axis would force the
+  // other axis to also be non-"visible" as well.
+
+  if (mOuterFrame) {
+    nsIFrame* containerFrame = mOuterFrame->GetParent();
+    if (containerFrame &&
+        StyleDisplay()->mOverflowX == NS_STYLE_OVERFLOW_VISIBLE) {
+      auto containerType = containerFrame->GetType();
+      if (containerType == nsGkAtoms::flexContainerFrame &&
+          (static_cast<nsFlexContainerFrame*>(containerFrame)->IsHorizontal() ==
+           (aAxis == eAxisHorizontal))) {
+        return true;
+      }
+      if (containerType == nsGkAtoms::gridContainerFrame) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 already_AddRefed<CSSValue>
 nsComputedDOMStyle::DoGetMinHeight()
 {
   RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
   nsStyleCoord minHeight = StylePosition()->mMinHeight;
 
-  if (eStyleUnit_Auto == minHeight.GetUnit()) {
-    // In non-flexbox contexts, "min-height: auto" means "min-height: 0"
-    // XXXdholbert For flex items, we should set |minHeight| to the
-    // -moz-min-content keyword, instead of 0, once we support -moz-min-content
-    // as a height value.
+  if (eStyleUnit_Auto == minHeight.GetUnit() &&
+      !ShouldHonorMinSizeAutoInAxis(eAxisVertical)) {
     minHeight.SetCoordValue(0);
   }
 
@@ -4893,20 +4941,9 @@ nsComputedDOMStyle::DoGetMinWidth()
 
   nsStyleCoord minWidth = StylePosition()->mMinWidth;
 
-  if (eStyleUnit_Auto == minWidth.GetUnit()) {
-    // "min-width: auto" means "0", unless we're a flex item in a horizontal
-    // flex container, in which case it means "min-content"
+  if (eStyleUnit_Auto == minWidth.GetUnit() &&
+      !ShouldHonorMinSizeAutoInAxis(eAxisHorizontal)) {
     minWidth.SetCoordValue(0);
-    if (mOuterFrame && mOuterFrame->IsFlexItem()) {
-      nsIFrame* flexContainer = mOuterFrame->GetParent();
-      MOZ_ASSERT(flexContainer &&
-                 flexContainer->GetType() == nsGkAtoms::flexContainerFrame,
-                 "IsFlexItem() lied...?");
-
-      if (static_cast<nsFlexContainerFrame*>(flexContainer)->IsHorizontal()) {
-        minWidth.SetIntValue(NS_STYLE_WIDTH_MIN_CONTENT, eStyleUnit_Enumerated);
-      }
-    }
   }
 
   SetValueToCoord(val, minWidth, true, nullptr, nsCSSProps::kWidthKTable);
@@ -5564,38 +5601,31 @@ nsComputedDOMStyle::GetSVGPaintFor(bool aFill)
 
   nsAutoString paintString;
 
-  switch (paint->mType) {
+  switch (paint->Type()) {
     case eStyleSVGPaintType_None:
-    {
       val->SetIdent(eCSSKeyword_none);
       break;
-    }
     case eStyleSVGPaintType_Color:
-    {
-      SetToRGBAColor(val, paint->mPaint.mColor);
+      SetToRGBAColor(val, paint->GetColor());
       break;
-    }
-    case eStyleSVGPaintType_Server:
-    {
+    case eStyleSVGPaintType_Server: {
       RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(false);
       RefPtr<nsROCSSPrimitiveValue> fallback = new nsROCSSPrimitiveValue;
-      SetValueToFragmentOrURL(paint->mPaint.mPaintServer, val);
-      SetToRGBAColor(fallback, paint->mFallbackColor);
+      SetValueToURLValue(paint->GetPaintServer(), val);
+      SetToRGBAColor(fallback, paint->GetFallbackColor());
 
       valueList->AppendCSSValue(val.forget());
       valueList->AppendCSSValue(fallback.forget());
       return valueList.forget();
     }
     case eStyleSVGPaintType_ContextFill:
-    {
       val->SetIdent(eCSSKeyword_context_fill);
+      // XXXheycam context-fill and context-stroke can have fallback colors,
+      // so they should be serialized here too
       break;
-    }
     case eStyleSVGPaintType_ContextStroke:
-    {
       val->SetIdent(eCSSKeyword_context_stroke);
       break;
-    }
   }
 
   return val.forget();
@@ -5617,7 +5647,7 @@ already_AddRefed<CSSValue>
 nsComputedDOMStyle::DoGetMarkerEnd()
 {
   RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  SetValueToFragmentOrURL(&StyleSVG()->mMarkerEnd, val);
+  SetValueToURLValue(StyleSVG()->mMarkerEnd, val);
 
   return val.forget();
 }
@@ -5626,7 +5656,7 @@ already_AddRefed<CSSValue>
 nsComputedDOMStyle::DoGetMarkerMid()
 {
   RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  SetValueToFragmentOrURL(&StyleSVG()->mMarkerMid, val);
+  SetValueToURLValue(StyleSVG()->mMarkerMid, val);
 
   return val.forget();
 }
@@ -5635,7 +5665,7 @@ already_AddRefed<CSSValue>
 nsComputedDOMStyle::DoGetMarkerStart()
 {
   RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-  SetValueToFragmentOrURL(&StyleSVG()->mMarkerStart, val);
+  SetValueToURLValue(StyleSVG()->mMarkerStart, val);
 
   return val.forget();
 }
@@ -6030,7 +6060,7 @@ nsComputedDOMStyle::GetShapeSource(
                                                 aBoxKeywordTable);
     case StyleShapeSourceType::URL: {
       RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
-      SetValueToFragmentOrURL(aShapeSource.GetURL(), val);
+      SetValueToURLValue(aShapeSource.GetURL(), val);
       return val.forget();
     }
     case StyleShapeSourceType::None: {
@@ -6075,8 +6105,9 @@ nsComputedDOMStyle::CreatePrimitiveValueForStyleFilter(
   RefPtr<nsROCSSPrimitiveValue> value = new nsROCSSPrimitiveValue;
   // Handle url().
   if (aStyleFilter.GetType() == NS_STYLE_FILTER_URL) {
-    MOZ_ASSERT(aStyleFilter.GetURL()->GetSourceURL());
-    SetValueToFragmentOrURL(aStyleFilter.GetURL(), value);
+    MOZ_ASSERT(aStyleFilter.GetURL() &&
+               aStyleFilter.GetURL()->GetURI());
+    SetValueToURLValue(aStyleFilter.GetURL(), value);
     return value.forget();
   }
 
@@ -6145,7 +6176,7 @@ nsComputedDOMStyle::DoGetMask()
       firstLayer.mMaskMode != NS_STYLE_MASK_MODE_MATCH_SOURCE ||
       !nsStyleImageLayers::IsInitialPositionForLayerType(
         firstLayer.mPosition, nsStyleImageLayers::LayerType::Mask) ||
-      !firstLayer.mRepeat.IsInitialValue(nsStyleImageLayers::LayerType::Mask) ||
+      !firstLayer.mRepeat.IsInitialValue() ||
       !firstLayer.mSize.IsInitialValue() ||
       !(firstLayer.mImage.GetType() == eStyleImageType_Null ||
         firstLayer.mImage.GetType() == eStyleImageType_Image)) {
@@ -6154,11 +6185,7 @@ nsComputedDOMStyle::DoGetMask()
 
   RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
 
-  if (firstLayer.mSourceURI.GetSourceURL()) {
-    SetValueToFragmentOrURL(&firstLayer.mSourceURI, val);
-  } else {
-    val->SetIdent(eCSSKeyword_none);
-  }
+  SetValueToURLValue(firstLayer.mSourceURI, val);
 
   return val.forget();
 }

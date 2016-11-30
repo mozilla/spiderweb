@@ -12,7 +12,7 @@ const {Task} = require("devtools/shared/task");
 const {gDevTools} = require("devtools/client/framework/devtools");
 
 const {LocalizationHelper} = require("devtools/shared/l10n");
-const L10N = new LocalizationHelper("devtools/locale/toolbox.properties");
+const L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
 
 exports.OptionsPanel = OptionsPanel;
 
@@ -186,15 +186,15 @@ OptionsPanel.prototype = {
       "tools-not-supported-label");
     let atleastOneToolNotSupported = false;
 
+    const toolbox = this.toolbox;
+
+    // Signal tool registering/unregistering globally (for the tools registered
+    // globally) and per toolbox (for the tools registered to a single toolbox).
     let onCheckboxClick = function (id) {
-      let toolDefinition = gDevTools._tools.get(id);
+      let toolDefinition = gDevTools._tools.get(id) || toolbox.getToolDefinition(id);
       // Set the kill switch pref boolean to true
       Services.prefs.setBoolPref(toolDefinition.visibilityswitch, this.checked);
-      if (this.checked) {
-        gDevTools.emit("tool-registered", id);
-      } else {
-        gDevTools.emit("tool-unregistered", toolDefinition);
-      }
+      gDevTools.emit(this.checked ? "tool-registered" : "tool-unregistered", id);
     };
 
     let createToolCheckbox = tool => {
@@ -243,6 +243,13 @@ OptionsPanel.prototype = {
       additionalToolsBox.appendChild(createToolCheckbox(tool));
     }
 
+    // Populating the additional toolbox-specific tools list that came
+    // from WebExtension add-ons.
+    for (let tool of this.toolbox.getAdditionalTools()) {
+      atleastOneAddon = true;
+      additionalToolsBox.appendChild(createToolCheckbox(tool));
+    }
+
     if (!atleastOneAddon) {
       additionalToolsBox.style.display = "none";
     }
@@ -256,7 +263,10 @@ OptionsPanel.prototype = {
 
   setupThemeList: function () {
     let themeBox = this.panelDoc.getElementById("devtools-theme-box");
-    themeBox.innerHTML = "";
+    let themeLabels = themeBox.querySelectorAll("label");
+    for (let label of themeLabels) {
+      label.remove();
+    }
 
     let createThemeOption = theme => {
       let inputLabel = this.panelDoc.createElement("label");

@@ -20,6 +20,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsIXULRuntime.h"
 #include "nsPrintfCString.h"
+#include "nsXULAppAPI.h"
 
 // Includes for the crash report annotation in ErrorLoadingBuiltinSheet.
 #ifdef MOZ_CRASHREPORTER
@@ -133,11 +134,6 @@ nsLayoutStylesheetCache::UASheet()
 StyleSheet*
 nsLayoutStylesheetCache::HTMLSheet()
 {
-  if (!mHTMLSheet) {
-    LoadSheetURL("resource://gre-resources/html.css",
-                 &mHTMLSheet, eAgentSheetFeatures);
-  }
-
   return mHTMLSheet;
 }
 
@@ -253,6 +249,14 @@ nsLayoutStylesheetCache::Shutdown()
   gCSSLoader_Servo = nullptr;
   gStyleCache_Gecko = nullptr;
   gStyleCache_Servo = nullptr;
+  MOZ_ASSERT(!gUserContentSheetURL, "Got the URL but never used?");
+}
+
+void
+nsLayoutStylesheetCache::SetUserContentCSSURL(nsIURI* aURI)
+{
+  MOZ_ASSERT(XRE_IsContentProcess(), "Only used in content processes.");
+  gUserContentSheetURL = aURI;
 }
 
 MOZ_DEFINE_MALLOC_SIZE_OF(LayoutStylesheetCacheMallocSizeOf)
@@ -325,6 +329,8 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache(StyleBackendType aType)
   // per-profile, since they're profile-invariant.
   LoadSheetURL("resource://gre-resources/counterstyles.css",
                &mCounterStylesSheet, eAgentSheetFeatures);
+  LoadSheetURL("resource://gre-resources/html.css",
+               &mHTMLSheet, eAgentSheetFeatures);
   LoadSheetURL("chrome://global/content/minimal-xul.css",
                &mMinimalXULSheet, eAgentSheetFeatures);
   LoadSheetURL("resource://gre-resources/quirk.css",
@@ -333,6 +339,12 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache(StyleBackendType aType)
                &mSVGSheet, eAgentSheetFeatures);
   LoadSheetURL("chrome://global/content/xul.css",
                &mXULSheet, eAgentSheetFeatures);
+
+  if (gUserContentSheetURL) {
+    MOZ_ASSERT(XRE_IsContentProcess(), "Only used in content processes.");
+    LoadSheet(gUserContentSheetURL, &mUserContentSheet, eUserSheetFeatures);
+    gUserContentSheetURL = nullptr;
+  }
 
   // The remaining sheets are created on-demand do to their use being rarer
   // (which helps save memory for Firefox OS apps) or because they need to
@@ -379,8 +391,6 @@ nsLayoutStylesheetCache::For(StyleBackendType aType)
     //                               "layout.css.example-pref.enabled");
     Preferences::RegisterCallback(&DependentPrefChanged,
                                   "layout.css.grid.enabled");
-    Preferences::RegisterCallback(&DependentPrefChanged,
-                                  "dom.details_element.enabled");
   }
 
   return cache;
@@ -820,7 +830,6 @@ nsLayoutStylesheetCache::DependentPrefChanged(const char* aPref, void* aData)
                   gStyleCache_Servo ? &gStyleCache_Servo->sheet_ : nullptr);
 
   INVALIDATE(mUASheet);  // for layout.css.grid.enabled
-  INVALIDATE(mHTMLSheet); // for dom.details_element.enabled
 
 #undef INVALIDATE
 }
@@ -967,3 +976,6 @@ nsLayoutStylesheetCache::gCSSLoader_Gecko;
 
 mozilla::StaticRefPtr<mozilla::css::Loader>
 nsLayoutStylesheetCache::gCSSLoader_Servo;
+
+mozilla::StaticRefPtr<nsIURI>
+nsLayoutStylesheetCache::gUserContentSheetURL;

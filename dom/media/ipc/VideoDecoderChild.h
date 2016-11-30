@@ -12,10 +12,14 @@
 #include "PlatformDecoderModule.h"
 
 namespace mozilla {
+namespace layers {
+class SynchronousTask;
+}
 namespace dom {
 
 class RemoteVideoDecoder;
 class RemoteDecoderModule;
+class VideoDecoderManagerChild;
 
 class VideoDecoderChild final : public PVideoDecoderChild
 {
@@ -25,31 +29,34 @@ public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VideoDecoderChild)
 
   // PVideoDecoderChild
-  bool RecvOutput(const VideoDataIPDL& aData) override;
-  bool RecvInputExhausted() override;
-  bool RecvDrainComplete() override;
-  bool RecvError(const nsresult& aError) override;
-  bool RecvInitComplete(const bool& aHardware, const nsCString& aHardwareReason) override;
-  bool RecvInitFailed(const nsresult& aReason) override;
+  mozilla::ipc::IPCResult RecvOutput(const VideoDataIPDL& aData) override;
+  mozilla::ipc::IPCResult RecvInputExhausted() override;
+  mozilla::ipc::IPCResult RecvDrainComplete() override;
+  mozilla::ipc::IPCResult RecvError(const nsresult& aError) override;
+  mozilla::ipc::IPCResult RecvInitComplete(const bool& aHardware, const nsCString& aHardwareReason) override;
+  mozilla::ipc::IPCResult RecvInitFailed(const nsresult& aReason) override;
+  mozilla::ipc::IPCResult RecvFlushComplete() override;
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
   RefPtr<MediaDataDecoder::InitPromise> Init();
   void Input(MediaRawData* aSample);
-  void Flush();
+  void Flush(layers::SynchronousTask* Task);
   void Drain();
   void Shutdown();
   bool IsHardwareAccelerated(nsACString& aFailureReason) const;
   void SetSeekThreshold(const media::TimeUnit& aTime);
 
   MOZ_IS_CLASS_INIT
-  void InitIPDL(MediaDataDecoderCallback* aCallback,
+  bool InitIPDL(MediaDataDecoderCallback* aCallback,
                 const VideoInfo& aVideoInfo,
-                layers::KnowsCompositor* aKnowsCompositor);
+                const layers::TextureFactoryIdentifier& aIdentifier);
   void DestroyIPDL();
 
   // Called from IPDL when our actor has been destroyed
   void IPDLActorDestroyed();
+
+  VideoDecoderManagerChild* GetManager();
 
 private:
   ~VideoDecoderChild();
@@ -63,8 +70,8 @@ private:
 
   MozPromiseHolder<MediaDataDecoder::InitPromise> mInitPromise;
 
-  VideoInfo mVideoInfo;
-  RefPtr<layers::KnowsCompositor> mKnowsCompositor;
+  layers::SynchronousTask* mFlushTask;
+
   nsCString mHardwareAcceleratedReason;
   bool mCanSend;
   bool mInitialized;

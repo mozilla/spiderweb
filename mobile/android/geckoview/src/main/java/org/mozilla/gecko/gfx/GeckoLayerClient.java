@@ -9,7 +9,6 @@ import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.gfx.LayerView.DrawListener;
-import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.util.FloatUtils;
 import org.mozilla.gecko.AppConstants;
 
@@ -87,7 +86,7 @@ class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
     @WrapForJNI(stubName = "ClearColor")
     private volatile int mClearColor = Color.WHITE;
 
-    public GeckoLayerClient(Context context, LayerView view, EventDispatcher eventDispatcher) {
+    public GeckoLayerClient(Context context, LayerView view) {
         // we can fill these in with dummy values because they are always written
         // to before being read
         mContext = context;
@@ -104,7 +103,7 @@ class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
 
         mDrawListeners = new ArrayList<DrawListener>();
         mToolbarAnimator = new DynamicToolbarAnimator(this);
-        mPanZoomController = PanZoomController.Factory.create(this, view, eventDispatcher);
+        mPanZoomController = PanZoomController.Factory.create(this, view);
         mView = view;
         mView.setListener(this);
         mContentDocumentIsDisplayed = true;
@@ -254,27 +253,6 @@ class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
         GeckoAppShell.notifyObservers("Window:Resize", json);
     }
 
-    /** Sets the current page rect. You must hold the monitor while calling this. */
-    private void setPageRect(RectF rect, RectF cssRect) {
-        // Since the "rect" is always just a multiple of "cssRect" we don't need to
-        // check both; this function assumes that both "rect" and "cssRect" are relative
-        // the zoom factor in mViewportMetrics.
-        if (mViewportMetrics.getCssPageRect().equals(cssRect))
-            return;
-
-        mViewportMetrics = mViewportMetrics.setPageRect(rect, cssRect);
-
-        // Page size is owned by the layer client, so no need to notify it of
-        // this change.
-
-        mView.post(new Runnable() {
-            @Override
-            public void run() {
-                mView.requestRender();
-            }
-        });
-    }
-
     /**
      * The different types of Viewport messages handled. All viewport events
      * expect a display-port to be returned, but can handle one not being
@@ -298,8 +276,7 @@ class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
     /** The compositor invokes this function just before compositing a frame where the document
       * is different from the document composited on the last frame. In these cases, the viewport
       * information we have in Java is no longer valid and needs to be replaced with the new
-      * viewport information provided. setPageRect will never be invoked on the same frame that
-      * this function is invoked on; and this function will always be called prior to syncViewportInfo.
+      * viewport information provided.
       */
     @WrapForJNI
     public void setFirstPaintViewport(float offsetX, float offsetY, float zoom,
@@ -330,22 +307,6 @@ class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
         mContentDocumentIsDisplayed = true;
     }
 
-    /** The compositor invokes this function whenever it determines that the page rect
-      * has changed (based on the information it gets from layout). If setFirstPaintViewport
-      * is invoked on a frame, then this function will not be. For any given frame, this
-      * function will be invoked before syncViewportInfo.
-      */
-    @WrapForJNI
-    public void setPageRect(float cssPageLeft, float cssPageTop, float cssPageRight, float cssPageBottom) {
-        synchronized (getLock()) {
-            RectF cssPageRect = new RectF(cssPageLeft, cssPageTop, cssPageRight, cssPageBottom);
-            float ourZoom = getViewportMetrics().zoomFactor;
-            setPageRect(RectUtils.scale(cssPageRect, ourZoom), cssPageRect);
-            // Here the page size of the document has changed, but the document being displayed
-            // is still the same. Therefore, we don't need to send anything to browser.js;
-        }
-    }
-
     /** The compositor invokes this function on every frame to figure out what part of the
       * page to display, and to inform Java of the current display port. Since it is called
       * on every frame, it needs to be ultra-fast.
@@ -354,8 +315,7 @@ class GeckoLayerClient implements LayerView.Listener, PanZoomTarget
       * every time we're called. NOTE: we might be able to return a ImmutableViewportMetrics
       * which would avoid the copy into mCurrentViewTransform.
       */
-    @WrapForJNI
-    public ViewTransform syncViewportInfo(int x, int y, int width, int height, float resolution, boolean layersUpdated,
+    private ViewTransform syncViewportInfo(int x, int y, int width, int height, float resolution, boolean layersUpdated,
                                           int paintSyncId) {
         // getViewportMetrics is thread safe so we don't need to synchronize.
         // We save the viewport metrics here, so we later use it later in

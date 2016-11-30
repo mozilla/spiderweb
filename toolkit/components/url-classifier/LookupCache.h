@@ -96,7 +96,9 @@ public:
   static nsresult GetHostKeys(const nsACString& aSpec,
                               nsTArray<nsCString>* aHostKeys);
 
-  LookupCache(const nsACString& aTableName, nsIFile* aStoreFile);
+  LookupCache(const nsACString& aTableName,
+              const nsACString& aProvider,
+              nsIFile* aStoreFile);
   virtual ~LookupCache() {}
 
   const nsCString &TableName() const { return mTableName; }
@@ -126,9 +128,11 @@ public:
   virtual nsresult Has(const Completion& aCompletion,
                        bool* aHas, bool* aComplete) = 0;
 
+  virtual void ClearAll();
+
   template<typename T>
   static T* Cast(LookupCache* aThat) {
-    return (T::VER == aThat->Ver() ? reinterpret_cast<T*>(aThat) : nullptr);
+    return ((aThat && T::VER == aThat->Ver()) ? reinterpret_cast<T*>(aThat) : nullptr);
   }
 
 private:
@@ -142,10 +146,9 @@ private:
   virtual int Ver() const = 0;
 
 protected:
-  virtual void ClearAll();
-
   bool mPrimed;
   nsCString mTableName;
+  nsCString mProvider;
   nsCOMPtr<nsIFile> mRootStoreDirectory;
   nsCOMPtr<nsIFile> mStoreDirectory;
 
@@ -159,8 +162,10 @@ protected:
 class LookupCacheV2 final : public LookupCache
 {
 public:
-  explicit LookupCacheV2(const nsACString& aTableName, nsIFile* aStoreFile)
-    : LookupCache(aTableName, aStoreFile) {}
+  explicit LookupCacheV2(const nsACString& aTableName,
+                         const nsACString& aProvider,
+                         nsIFile* aStoreFile)
+    : LookupCache(aTableName, aProvider, aStoreFile) {}
   ~LookupCacheV2() {}
 
   virtual nsresult Init() override;

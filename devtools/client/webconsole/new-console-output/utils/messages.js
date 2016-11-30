@@ -7,7 +7,7 @@
 "use strict";
 
 const WebConsoleUtils = require("devtools/client/webconsole/utils").Utils;
-const STRINGS_URI = "devtools/locale/webconsole.properties";
+const STRINGS_URI = "devtools/client/locales/webconsole.properties";
 const l10n = new WebConsoleUtils.L10n(STRINGS_URI);
 
 const {
@@ -127,7 +127,9 @@ function transformPacket(packet) {
         parameters,
         messageText,
         stacktrace: message.stacktrace ? message.stacktrace : null,
-        frame
+        frame,
+        timeStamp: message.timeStamp,
+        userProvidedStyles: message.styles,
       });
     }
 
@@ -138,6 +140,7 @@ function transformPacket(packet) {
         type: MESSAGE_TYPE.LOG,
         level: MESSAGE_LEVEL.LOG,
         messageText: "Navigated to " + message.url,
+        timeStamp: message.timeStamp
       });
     }
 
@@ -156,13 +159,18 @@ function transformPacket(packet) {
         column: pageError.columnNumber
       } : null;
 
+      let matchesCSS = /^(?:CSS|Layout)\b/.test(pageError.category);
+      let messageSource = matchesCSS ? MESSAGE_SOURCE.CSS
+                                     : MESSAGE_SOURCE.JAVASCRIPT;
       return new ConsoleMessage({
-        source: MESSAGE_SOURCE.JAVASCRIPT,
+        source: messageSource,
         type: MESSAGE_TYPE.LOG,
         level,
         messageText: pageError.errorMessage,
         stacktrace: pageError.stacktrace ? pageError.stacktrace : null,
         frame,
+        exceptionDocURL: pageError.exceptionDocURL,
+        timeStamp: pageError.timeStamp
       });
     }
 
@@ -174,6 +182,7 @@ function transformPacket(packet) {
         isXHR: networkEvent.isXHR,
         request: networkEvent.request,
         response: networkEvent.response,
+        timeStamp: networkEvent.timeStamp
       });
     }
 
@@ -181,7 +190,10 @@ function transformPacket(packet) {
     default: {
       let {
         exceptionMessage: messageText,
-        result: parameters
+        exceptionDocURL,
+        frame,
+        result: parameters,
+        timestamp: timeStamp,
       } = packet;
 
       const level = messageText ? MESSAGE_LEVEL.ERROR : MESSAGE_LEVEL.LOG;
@@ -191,6 +203,9 @@ function transformPacket(packet) {
         level,
         messageText,
         parameters,
+        exceptionDocURL,
+        frame,
+        timeStamp,
       });
     }
   }

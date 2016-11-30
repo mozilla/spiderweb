@@ -4,26 +4,33 @@
 
 import time
 
+from firefox_puppeteer import PuppeteerMixin
+from marionette import MarionetteTestCase
 from marionette_driver import By, expected, Wait
 from marionette_driver.errors import MarionetteException
 
-from firefox_ui_harness.testcases import FirefoxTestCase
 
-
-class TestSSLDisabledErrorPage(FirefoxTestCase):
+class TestSSLDisabledErrorPage(PuppeteerMixin, MarionetteTestCase):
 
     def setUp(self):
-        FirefoxTestCase.setUp(self)
+        super(TestSSLDisabledErrorPage, self).setUp()
 
         self.url = 'https://tlsv1-0.mozqa.com'
 
-        self.utils.sanitize({"sessions": True})
+        self.puppeteer.utils.sanitize({"sessions": True})
 
         # Disable SSL 3.0, TLS 1.0 and TLS 1.1 for secure connections
         # by forcing the use of TLS 1.2
         # see: http://kb.mozillazine.org/Security.tls.version.*#Possible_values_and_their_effects
-        self.prefs.set_pref('security.tls.version.min', 3)
-        self.prefs.set_pref('security.tls.version.max', 3)
+        self.puppeteer.prefs.set_pref('security.tls.version.min', 3)
+        self.puppeteer.prefs.set_pref('security.tls.version.max', 3)
+
+    def tearDown(self):
+        try:
+            self.marionette.clear_pref('security.tls.version.min')
+            self.marionette.clear_pref('security.tls.version.max')
+        finally:
+            super(TestSSLDisabledErrorPage, self).tearDown()
 
     def test_ssl_disabled_error_page(self):
         with self.marionette.using_context('content'):

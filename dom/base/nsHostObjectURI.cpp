@@ -8,6 +8,7 @@
 
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
+#include "nsHostObjectProtocolHandler.h"
 
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/URIUtils.h"
@@ -41,7 +42,7 @@ NS_INTERFACE_MAP_END_INHERITING(mozilla::net::nsSimpleURI)
 NS_IMETHODIMP
 nsHostObjectURI::GetBlobImpl(nsISupports** aBlobImpl)
 {
-  RefPtr<BlobImpl> blobImpl(mBlobImpl);
+  RefPtr<mozilla::dom::BlobImpl> blobImpl(mBlobImpl);
   blobImpl.forget(aBlobImpl);
   return NS_OK;
 }

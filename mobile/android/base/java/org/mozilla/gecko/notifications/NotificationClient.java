@@ -75,12 +75,18 @@ public final class NotificationClient implements NotificationListener {
                                   String persistentData) {
         // Put the strings into the intent as an URI
         // "alert:?name=<name>&cookie=<cookie>"
-        final ComponentName comp = GeckoAppShell.getGeckoInterface()
-                                                .getActivity().getComponentName();
+        String packageName = AppConstants.ANDROID_PACKAGE_NAME;
+        String className = AppConstants.MOZ_ANDROID_BROWSER_INTENT_CLASS;
+        if (GeckoAppShell.getGeckoInterface() != null) {
+            final ComponentName comp = GeckoAppShell.getGeckoInterface()
+                                                    .getActivity().getComponentName();
+            packageName = comp.getPackageName();
+            className = comp.getClassName();
+        }
         final Uri dataUri = (new Uri.Builder())
                 .scheme("moz-notification")
-                .authority(comp.getPackageName())
-                .path(comp.getClassName())
+                .authority(packageName)
+                .path(className)
                 .appendQueryParameter("name", name)
                 .appendQueryParameter("cookie", cookie)
                 .build();
@@ -141,9 +147,9 @@ public final class NotificationClient implements NotificationListener {
                 .setContentIntent(contentIntent)
                 .setDeleteIntent(deleteIntent)
                 .setAutoCancel(true)
-                .setStyle(new NotificationCompat.InboxStyle()
-                          .addLine(alertText)
-                          .setSummaryText(host));
+                .setStyle(new NotificationCompat.BigTextStyle()
+                        .bigText(alertText)
+                        .setSummaryText(host));
 
         // Fetch icon.
         if (!imageUrl.isEmpty()) {

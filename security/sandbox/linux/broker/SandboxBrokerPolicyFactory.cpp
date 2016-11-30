@@ -136,6 +136,13 @@ SandboxBrokerPolicyFactory::SandboxBrokerPolicyFactory()
   if (NS_FAILED(rv)) {
     policy->AddDir(rdwrcr, "/tmp");
   }
+
+  // Bug 1308851: NVIDIA proprietary driver when using WebGL
+  policy->AddPrefix(rdwr, "/dev", "nvidia");
+
+  // Bug 1312678: radeonsi/Intel with DRI when using WebGL
+  policy->AddDir(rdwr, "/dev/dri");
+
   mCommonContentPolicy.reset(policy);
 #endif
 }

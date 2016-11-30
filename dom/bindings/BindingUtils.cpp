@@ -51,6 +51,7 @@
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
+#include "mozilla/dom/XrayExpandoClass.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "nsDOMClassInfo.h"
 #include "ipc/ErrorIPCUtils.h"
@@ -1892,7 +1893,54 @@ XrayOwnPropertyKeys(JSContext* cx, JS::Handle<JSObject*> wrapper,
                                    obj, flags, props);
 }
 
+const JSClass*
+XrayGetExpandoClass(JSContext* cx, JS::Handle<JSObject*> obj)
+{
+  DOMObjectType type;
+  const NativePropertyHooks* nativePropertyHooks =
+    GetNativePropertyHooks(cx, obj, type);
+  if (!IsInstance(type)) {
+    // Non-instances don't need any special expando classes.
+    return &DefaultXrayExpandoObjectClass;
+  }
+
+  return nativePropertyHooks->mXrayExpandoClass;
+}
+
+bool
+XrayDeleteNamedProperty(JSContext* cx, JS::Handle<JSObject*> wrapper,
+                        JS::Handle<JSObject*> obj, JS::Handle<jsid> id,
+                        JS::ObjectOpResult& opresult)
+{
+  DOMObjectType type;
+  const NativePropertyHooks* nativePropertyHooks =
+    GetNativePropertyHooks(cx, obj, type);
+  if (!IsInstance(type) || !nativePropertyHooks->mDeleteNamedProperty) {
+    return opresult.succeed();
+  }
+  return nativePropertyHooks->mDeleteNamedProperty(cx, wrapper, obj, id,
+                                                   opresult);
+}
+
+JSObject*
+GetCachedSlotStorageObjectSlow(JSContext* cx, JS::Handle<JSObject*> obj,
+                               bool* isXray)
+{
+  if (!xpc::WrapperFactory::IsXrayWrapper(obj)) {
+    JSObject* retval = js::UncheckedUnwrap(obj, /* stopAtWindowProxy = */ false);
+    MOZ_ASSERT(IsDOMObject(retval));
+    *isXray = false;
+    return retval;
+  }
+
+  *isXray = true;
+  return xpc::EnsureXrayExpandoObject(cx, obj);;
+}
+
+DEFINE_XRAY_EXPANDO_CLASS(, DefaultXrayExpandoObjectClass, 0);
+
 NativePropertyHooks sEmptyNativePropertyHooks = {
+  nullptr,
   nullptr,
   nullptr,
   {
@@ -2658,7 +2706,8 @@ IsNonExposedGlobal(JSContext* aCx, JSObject* aGlobal,
                 GlobalNames::DedicatedWorkerGlobalScope |
                 GlobalNames::SharedWorkerGlobalScope |
                 GlobalNames::ServiceWorkerGlobalScope |
-                GlobalNames::WorkerDebuggerGlobalScope)) == 0,
+                GlobalNames::WorkerDebuggerGlobalScope |
+                GlobalNames::WorkletGlobalScope)) == 0,
              "Unknown non-exposed global type");
 
   const char* name = js::GetObjectClass(aGlobal)->name;
@@ -2693,14 +2742,19 @@ IsNonExposedGlobal(JSContext* aCx, JSObject* aGlobal,
     return true;
   }
 
+  if ((aNonExposedGlobals & GlobalNames::WorkletGlobalScope) &&
+      !strcmp(name, "WorkletGlobalScope")) {
+    return true;
+  }
+
   return false;
 }
 
 void
 HandlePrerenderingViolation(nsPIDOMWindowInner* aWindow)
 {
-  // Suspend the window and its workers, and its children too.
-  aWindow->SuspendTimeouts();
+  // Freeze the window and its workers, and its children too.
+  aWindow->Freeze();
 
   // Suspend event handling on the document
   nsCOMPtr<nsIDocument> doc = aWindow->GetExtantDoc();

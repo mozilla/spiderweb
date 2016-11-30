@@ -8,7 +8,6 @@
 
 #include <stdint.h>
 
-#include "BRNameMatchingPolicy.h"
 #include "CTKnownLogs.h"
 #include "ExtendedValidation.h"
 #include "MultiLogCTVerifier.h"
@@ -322,13 +321,14 @@ CertVerifier::SHA1ModeMoreRestrictiveThanGivenMode(SHA1Mode mode)
 static const unsigned int MIN_RSA_BITS = 2048;
 static const unsigned int MIN_RSA_BITS_WEAK = 1024;
 
-SECStatus
+Result
 CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                          Time time, void* pinArg, const char* hostname,
                  /*out*/ UniqueCERTCertList& builtChain,
             /*optional*/ const Flags flags,
             /*optional*/ const SECItem* stapledOCSPResponseSECItem,
             /*optional*/ const SECItem* sctsFromTLSSECItem,
+            /*optional*/ const char* firstPartyDomain,
         /*optional out*/ SECOidTag* evOidPolicy,
         /*optional out*/ OCSPStaplingStatus* ocspStaplingStatus,
         /*optional out*/ KeySizeStatus* keySizeStatus,
@@ -348,41 +348,34 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
   }
   if (ocspStaplingStatus) {
     if (usage != certificateUsageSSLServer) {
-      PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
-      return SECFailure;
+      return Result::FATAL_ERROR_INVALID_ARGS;
     }
     *ocspStaplingStatus = OCSP_STAPLING_NEVER_CHECKED;
   }
 
   if (keySizeStatus) {
     if (usage != certificateUsageSSLServer) {
-      PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
-      return SECFailure;
+      return Result::FATAL_ERROR_INVALID_ARGS;
     }
     *keySizeStatus = KeySizeStatus::NeverChecked;
   }
 
   if (sha1ModeResult) {
     if (usage != certificateUsageSSLServer) {
-      PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
-      return SECFailure;
+      return Result::FATAL_ERROR_INVALID_ARGS;
     }
     *sha1ModeResult = SHA1ModeResult::NeverChecked;
   }
 
   if (!cert ||
       (usage != certificateUsageSSLServer && (flags & FLAG_MUST_BE_EV))) {
-    PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
-    return SECFailure;
+    return Result::FATAL_ERROR_INVALID_ARGS;
   }
 
-  Result rv;
-
   Input certDER;
-  rv = certDER.Init(cert->derCert.data, cert->derCert.len);
+  Result rv = certDER.Init(cert->derCert.data, cert->derCert.len);
   if (rv != Success) {
-    PR_SetError(MapResultToPRErrorCode(rv), 0);
-    return SECFailure;
+    return rv;
   }
 
   // We configure the OCSP fetching modes separately for EV and non-EV
@@ -404,8 +397,7 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                        stapledOCSPResponseSECItem->len);
     if (rv != Success) {
       // The stapled OCSP response was too big.
-      PR_SetError(SEC_ERROR_OCSP_MALFORMED_RESPONSE, 0);
-      return SECFailure;
+      return Result::ERROR_OCSP_MALFORMED_RESPONSE;
     }
     stapledOCSPResponse = &stapledOCSPResponseInput;
   }
@@ -430,6 +422,7 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                        ValidityCheckingMode::CheckingOff,
                                        SHA1Mode::Allowed,
                                        NetscapeStepUpPolicy::NeverMatch,
+                                       firstPartyDomain,
                                        builtChain, nullptr, nullptr);
       rv = BuildCertChain(trustDomain, certDER, time,
                           EndEntityOrCA::MustBeEndEntity,
@@ -469,7 +462,6 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
 
       rv = Result::ERROR_UNKNOWN_ERROR;
 
-#ifndef MOZ_NO_EV_CERTS
       // Try to validate for EV first.
       NSSCertDBTrustDomain::OCSPFetching evOCSPFetching
         = (mOCSPDownloadConfig == ocspOff) ||
@@ -504,7 +496,8 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                       mCertShortLifetimeInDays, mPinningMode, MIN_RSA_BITS,
                       ValidityCheckingMode::CheckForEV,
                       sha1ModeConfigurations[i], mNetscapeStepUpPolicy,
-                      builtChain, pinningTelemetryInfo, hostname);
+                      firstPartyDomain, builtChain, pinningTelemetryInfo,
+                      hostname);
         rv = BuildCertChainForOneKeyUsage(trustDomain, certDER, time,
                                           KeyUsage::digitalSignature,// (EC)DHE
                                           KeyUsage::keyEncipherment, // RSA
@@ -543,7 +536,6 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
       if (rv == Success) {
         break;
       }
-#endif
 
       if (flags & FLAG_MUST_BE_EV) {
         rv = Result::ERROR_POLICY_VALIDATION_FAILED;
@@ -591,7 +583,8 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                            mPinningMode, keySizeOptions[i],
                                            ValidityCheckingMode::CheckingOff,
                                            sha1ModeConfigurations[j],
-                                           mNetscapeStepUpPolicy, builtChain,
+                                           mNetscapeStepUpPolicy,
+                                           firstPartyDomain, builtChain,
                                            pinningTelemetryInfo, hostname);
           rv = BuildCertChainForOneKeyUsage(trustDomain, certDER, time,
                                             KeyUsage::digitalSignature,//(EC)DHE
@@ -656,7 +649,8 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                        pinningDisabled, MIN_RSA_BITS_WEAK,
                                        ValidityCheckingMode::CheckingOff,
                                        SHA1Mode::Allowed, mNetscapeStepUpPolicy,
-                                       builtChain, nullptr, nullptr);
+                                       firstPartyDomain, builtChain, nullptr,
+                                       nullptr);
       rv = BuildCertChain(trustDomain, certDER, time,
                           EndEntityOrCA::MustBeCA, KeyUsage::keyCertSign,
                           KeyPurposeId::id_kp_serverAuth,
@@ -672,7 +666,8 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                        ValidityCheckingMode::CheckingOff,
                                        SHA1Mode::Allowed,
                                        NetscapeStepUpPolicy::NeverMatch,
-                                       builtChain, nullptr, nullptr);
+                                       firstPartyDomain, builtChain, nullptr,
+                                       nullptr);
       rv = BuildCertChain(trustDomain, certDER, time,
                           EndEntityOrCA::MustBeEndEntity,
                           KeyUsage::digitalSignature,
@@ -699,7 +694,8 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                        ValidityCheckingMode::CheckingOff,
                                        SHA1Mode::Allowed,
                                        NetscapeStepUpPolicy::NeverMatch,
-                                       builtChain, nullptr, nullptr);
+                                       firstPartyDomain, builtChain, nullptr,
+                                       nullptr);
       rv = BuildCertChain(trustDomain, certDER, time,
                           EndEntityOrCA::MustBeEndEntity,
                           KeyUsage::keyEncipherment, // RSA
@@ -723,7 +719,8 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                        ValidityCheckingMode::CheckingOff,
                                        SHA1Mode::Allowed,
                                        NetscapeStepUpPolicy::NeverMatch,
-                                       builtChain, nullptr, nullptr);
+                                       firstPartyDomain, builtChain, nullptr,
+                                       nullptr);
       rv = BuildCertChain(trustDomain, certDER, time,
                           EndEntityOrCA::MustBeEndEntity,
                           KeyUsage::digitalSignature,
@@ -756,7 +753,8 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                     ValidityCheckingMode::CheckingOff,
                                     SHA1Mode::Allowed,
                                     NetscapeStepUpPolicy::NeverMatch,
-                                    builtChain, nullptr, nullptr);
+                                    firstPartyDomain, builtChain, nullptr,
+                                    nullptr);
       rv = BuildCertChain(sslTrust, certDER, time, endEntityOrCA,
                           keyUsage, eku, CertPolicyId::anyPolicy,
                           stapledOCSPResponse);
@@ -768,7 +766,8 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                         ValidityCheckingMode::CheckingOff,
                                         SHA1Mode::Allowed,
                                         NetscapeStepUpPolicy::NeverMatch,
-                                        builtChain, nullptr, nullptr);
+                                        firstPartyDomain, builtChain, nullptr,
+                                        nullptr);
         rv = BuildCertChain(emailTrust, certDER, time, endEntityOrCA,
                             keyUsage, eku, CertPolicyId::anyPolicy,
                             stapledOCSPResponse);
@@ -782,7 +781,8 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
                                                   ValidityCheckingMode::CheckingOff,
                                                   SHA1Mode::Allowed,
                                                   NetscapeStepUpPolicy::NeverMatch,
-                                                  builtChain, nullptr, nullptr);
+                                                  firstPartyDomain, builtChain,
+                                                  nullptr, nullptr);
           rv = BuildCertChain(objectSigningTrust, certDER, time,
                               endEntityOrCA, keyUsage, eku,
                               CertPolicyId::anyPolicy, stapledOCSPResponse);
@@ -797,14 +797,13 @@ CertVerifier::VerifyCert(CERTCertificate* cert, SECCertificateUsage usage,
   }
 
   if (rv != Success) {
-    PR_SetError(MapResultToPRErrorCode(rv), 0);
-    return SECFailure;
+    return rv;
   }
 
-  return SECSuccess;
+  return Success;
 }
 
-SECStatus
+Result
 CertVerifier::VerifySSLServerCert(const UniqueCERTCertificate& peerCert,
                      /*optional*/ const SECItem* stapledOCSPResponse,
                      /*optional*/ const SECItem* sctsFromTLS,
@@ -814,6 +813,7 @@ CertVerifier::VerifySSLServerCert(const UniqueCERTCertificate& peerCert,
                           /*out*/ UniqueCERTCertList& builtChain,
                      /*optional*/ bool saveIntermediatesInPermanentDatabase,
                      /*optional*/ Flags flags,
+                     /*optional*/ const char* firstPartyDomain,
                  /*optional out*/ SECOidTag* evOidPolicy,
                  /*optional out*/ OCSPStaplingStatus* ocspStaplingStatus,
                  /*optional out*/ KeySizeStatus* keySizeStatus,
@@ -831,84 +831,74 @@ CertVerifier::VerifySSLServerCert(const UniqueCERTCertificate& peerCert,
   }
 
   if (!hostname || !hostname[0]) {
-    PR_SetError(SSL_ERROR_BAD_CERT_DOMAIN, 0);
-    return SECFailure;
+    return Result::ERROR_BAD_CERT_DOMAIN;
   }
 
   // CreateCertErrorRunnable assumes that CheckCertHostname is only called
   // if VerifyCert succeeded.
-  SECStatus rv = VerifyCert(peerCert.get(), certificateUsageSSLServer, time,
-                            pinarg, hostname, builtChain, flags,
-                            stapledOCSPResponse, sctsFromTLS,
-                            evOidPolicy, ocspStaplingStatus, keySizeStatus,
-                            sha1ModeResult, pinningTelemetryInfo,
-                            ctInfo);
-  if (rv != SECSuccess) {
+  Result rv = VerifyCert(peerCert.get(), certificateUsageSSLServer, time,
+                         pinarg, hostname, builtChain, flags,
+                         stapledOCSPResponse, sctsFromTLS, firstPartyDomain,
+                         evOidPolicy, ocspStaplingStatus, keySizeStatus,
+                         sha1ModeResult, pinningTelemetryInfo, ctInfo);
+  if (rv != Success) {
     return rv;
   }
 
   Input peerCertInput;
-  Result result = peerCertInput.Init(peerCert->derCert.data,
-                                     peerCert->derCert.len);
-  if (result != Success) {
-    PR_SetError(MapResultToPRErrorCode(result), 0);
-    return SECFailure;
+  rv = peerCertInput.Init(peerCert->derCert.data, peerCert->derCert.len);
+  if (rv != Success) {
+    return rv;
   }
 
   Input stapledOCSPResponseInput;
   Input* responseInputPtr = nullptr;
   if (stapledOCSPResponse) {
-    result = stapledOCSPResponseInput.Init(stapledOCSPResponse->data,
-                                           stapledOCSPResponse->len);
-    if (result != Success) {
+    rv = stapledOCSPResponseInput.Init(stapledOCSPResponse->data,
+                                       stapledOCSPResponse->len);
+    if (rv != Success) {
       // The stapled OCSP response was too big.
-      PR_SetError(SEC_ERROR_OCSP_MALFORMED_RESPONSE, 0);
-      return SECFailure;
+      return Result::ERROR_OCSP_MALFORMED_RESPONSE;
     }
     responseInputPtr = &stapledOCSPResponseInput;
   }
 
   if (!(flags & FLAG_TLS_IGNORE_STATUS_REQUEST)) {
-    result = CheckTLSFeaturesAreSatisfied(peerCertInput, responseInputPtr);
-
-    if (result != Success) {
-      PR_SetError(MapResultToPRErrorCode(result), 0);
-      return SECFailure;
+    rv = CheckTLSFeaturesAreSatisfied(peerCertInput, responseInputPtr);
+    if (rv != Success) {
+      return rv;
     }
   }
 
   Input hostnameInput;
-  result = hostnameInput.Init(BitwiseCast<const uint8_t*, const char*>(hostname),
-                              strlen(hostname));
-  if (result != Success) {
-    PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
-    return SECFailure;
+  rv = hostnameInput.Init(BitwiseCast<const uint8_t*, const char*>(hostname),
+                          strlen(hostname));
+  if (rv != Success) {
+    return Result::FATAL_ERROR_INVALID_ARGS;
   }
   bool isBuiltInRoot;
-  result = IsCertChainRootBuiltInRoot(builtChain, isBuiltInRoot);
-  if (result != Success) {
-    PR_SetError(MapResultToPRErrorCode(result), 0);
-    return SECFailure;
+  rv = IsCertChainRootBuiltInRoot(builtChain, isBuiltInRoot);
+  if (rv != Success) {
+    return rv;
   }
   BRNameMatchingPolicy nameMatchingPolicy(
     isBuiltInRoot ? mNameMatchingMode
                   : BRNameMatchingPolicy::Mode::DoNotEnforce);
-  result = CheckCertHostname(peerCertInput, hostnameInput, nameMatchingPolicy);
-  if (result != Success) {
+  rv = CheckCertHostname(peerCertInput, hostnameInput, nameMatchingPolicy);
+  if (rv != Success) {
     // Treat malformed name information as a domain mismatch.
-    if (result == Result::ERROR_BAD_DER) {
-      PR_SetError(SSL_ERROR_BAD_CERT_DOMAIN, 0);
-    } else {
-      PR_SetError(MapResultToPRErrorCode(result), 0);
+    if (rv == Result::ERROR_BAD_DER) {
+      return Result::ERROR_BAD_CERT_DOMAIN;
     }
-    return SECFailure;
+
+    return rv;
   }
 
   if (saveIntermediatesInPermanentDatabase) {
     SaveIntermediateCerts(builtChain);
   }
 
-  return SECSuccess;
+  return Success;
 }
 
 } } // namespace mozilla::psm

@@ -18,6 +18,7 @@
 #include "mozilla/dom/FragmentOrElement.h"
 
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/DeclarationBlockInlines.h"
 #include "mozilla/EffectSet.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
@@ -102,7 +103,6 @@
 #include "nsRuleProcessorData.h"
 #include "nsTextNode.h"
 #include "mozilla/dom/NodeListBinding.h"
-#include "mozilla/dom/UndoManager.h"
 
 #ifdef MOZ_XUL
 #include "nsIXULDocument.h"
@@ -531,7 +531,6 @@ nsNodeSupportsWeakRefTearoff::GetWeakReference(nsIWeakReference** aInstancePtr)
 FragmentOrElement::nsDOMSlots::nsDOMSlots()
   : nsINode::nsSlots(),
     mDataset(nullptr),
-    mUndoManager(nullptr),
     mBindingParent(nullptr)
 {
 }
@@ -554,9 +553,6 @@ FragmentOrElement::nsDOMSlots::Traverse(nsCycleCollectionTraversalCallback &cb, 
 
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mSlots->mAttributeMap");
   cb.NoteXPCOMChild(mAttributeMap.get());
-
-  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mSlots->mUndoManager");
-  cb.NoteXPCOMChild(mUndoManager.get());
 
   if (aIsXUL) {
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mSlots->mControllers");
@@ -606,7 +602,6 @@ FragmentOrElement::nsDOMSlots::Unlink(bool aIsXUL)
   mShadowRoot = nullptr;
   mContainingShadow = nullptr;
   mChildrenList = nullptr;
-  mUndoManager = nullptr;
   mCustomElementData = nullptr;
   mClassList = nullptr;
 }
@@ -680,7 +675,7 @@ FindChromeAccessOnlySubtreeOwner(nsIContent* aContent)
 }
 
 nsresult
-nsIContent::PreHandleEvent(EventChainPreVisitor& aVisitor)
+nsIContent::GetEventTargetParent(EventChainPreVisitor& aVisitor)
 {
   //FIXME! Document how this event retargeting works, Bug 329124.
   aVisitor.mCanHandle = true;

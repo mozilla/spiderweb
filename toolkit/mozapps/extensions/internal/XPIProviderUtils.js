@@ -5,7 +5,7 @@
 "use strict";
 
 // These are injected from XPIProvider.jsm
-/*globals ADDON_SIGNING, SIGNED_TYPES, BOOTSTRAP_REASONS, DB_SCHEMA,
+/* globals ADDON_SIGNING, SIGNED_TYPES, BOOTSTRAP_REASONS, DB_SCHEMA,
           AddonInternal, XPIProvider, XPIStates, syncLoadManifestFromFile,
           isUsableAddon, recordAddonTelemetry, applyBlocklistChanges,
           flushChromeCaches, canRunInSafeMode*/
@@ -18,7 +18,7 @@ var Cu = Components.utils;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/AddonManager.jsm");
-/*globals AddonManagerPrivate*/
+/* globals AddonManagerPrivate*/
 Cu.import("resource://gre/modules/Preferences.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "AddonRepository",
@@ -92,7 +92,7 @@ const PROP_JSON_FIELDS = ["id", "syncGUID", "location", "version", "type",
 // Properties that should be migrated where possible from an old database. These
 // shouldn't include properties that can be read directly from install.rdf files
 // or calculated
-const DB_MIGRATE_METADATA= ["installDate", "userDisabled", "softDisabled",
+const DB_MIGRATE_METADATA = ["installDate", "userDisabled", "softDisabled",
                             "sourceURI", "applyBackgroundUpdates",
                             "releaseNotesURI", "foreignInstall", "syncGUID"];
 
@@ -247,16 +247,6 @@ function logSQLError(aError, aErrorString) {
 }
 
 /**
- * A helper function to log any errors that occur during async statements.
- *
- * @param  aError
- *         A mozIStorageError to log
- */
-function asyncErrorLogger(aError) {
-  logSQLError(aError.result, aError.message);
-}
-
-/**
  * A helper function to step a statement synchronously and log any error that
  * occurs.
  *
@@ -292,27 +282,6 @@ function copyProperties(aObject, aProperties, aTarget) {
   aProperties.forEach(function(aProp) {
     if (aProp in aObject)
       aTarget[aProp] = aObject[aProp];
-  });
-  return aTarget;
-}
-
-/**
- * Copies properties from a mozIStorageRow to an object. If no target object is
- * passed a new object will be created and returned.
- *
- * @param  aRow
- *         A mozIStorageRow to copy from
- * @param  aProperties
- *         An array of properties to be copied
- * @param  aTarget
- *         An optional target object to copy the properties to
- * @return the object that the properties were copied onto
- */
-function copyRowProperties(aRow, aProperties, aTarget) {
-  if (!aTarget)
-    aTarget = {};
-  aProperties.forEach(function(aProp) {
-    aTarget[aProp] = aRow.getResultByName(aProp);
   });
   return aTarget;
 }
@@ -619,14 +588,11 @@ this.XPIDatabase = {
       if (fstream)
         fstream.close();
     }
-    // If an async load was also in progress, resolve that promise with our DB;
-    // otherwise create a resolved promise
+    // If an async load was also in progress, record in telemetry.
     if (this._dbPromise) {
       AddonManagerPrivate.recordSimpleMeasure("XPIDB_overlapped_load", 1);
-      this._dbPromise.resolve(this.addonDB);
     }
-    else
-      this._dbPromise = Promise.resolve(this.addonDB);
+    this._dbPromise = Promise.resolve(this.addonDB);
   },
 
   /**
@@ -770,7 +736,8 @@ this.XPIDatabase = {
         logger.debug("Async JSON file read took " + readOptions.outExecutionDuration + " MS");
         AddonManagerPrivate.recordSimpleMeasure("XPIDB_asyncRead_MS",
           readOptions.outExecutionDuration);
-        if (this._addonDB) {
+
+        if (this.addonDB) {
           logger.debug("Synchronous load completed while waiting for async load");
           return this.addonDB;
         }
@@ -782,9 +749,9 @@ this.XPIDatabase = {
         this.parseDB(data, true);
         return this.addonDB;
       })
-    .then(null,
+    .catch(
       error => {
-        if (this._addonDB) {
+        if (this.addonDB) {
           logger.debug("Synchronous load completed while waiting for async load");
           return this.addonDB;
         }
@@ -1587,7 +1554,7 @@ this.XPIDatabaseReconcile = {
   getVisibleAddons(addonMap) {
     let map = new Map();
 
-    for (let [location, addons] of addonMap) {
+    for (let addons of addonMap.values()) {
       for (let [id, addon] of addons) {
         if (!addon.visible)
           continue;
@@ -2028,7 +1995,7 @@ this.XPIDatabaseReconcile = {
     // for those add-ons must be removed from the database.
     for (let [locationName, addons] of previousAddons) {
       if (!currentAddons.has(locationName)) {
-        for (let [id, oldAddon] of addons)
+        for (let oldAddon of addons.values())
           this.removeMetadata(oldAddon);
       }
     }
@@ -2092,6 +2059,7 @@ this.XPIDatabaseReconcile = {
             AddonManagerPrivate.addStartupChange(AddonManager.STARTUP_CHANGE_INSTALLED, id);
 
           if (currentAddon.bootstrap) {
+            AddonManagerPrivate.addStartupChange(AddonManager.STARTUP_CHANGE_INSTALLED, id);
             // Visible bootstrapped add-ons need to have their install method called
             XPIProvider.callBootstrapMethod(currentAddon, currentAddon._sourceBundle,
                                             "install", BOOTSTRAP_REASONS.ADDON_INSTALL);

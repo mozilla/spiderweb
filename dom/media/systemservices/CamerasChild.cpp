@@ -87,9 +87,10 @@ public:
       existingBackgroundChild =
         ipc::BackgroundChild::SynchronouslyCreateForCurrentThread();
       LOG(("BackgroundChild: %p", existingBackgroundChild));
+      if (!existingBackgroundChild) {
+        return NS_ERROR_FAILURE;
+      }
     }
-    // By now PBackground is guaranteed to be up
-    MOZ_RELEASE_ASSERT(existingBackgroundChild);
 
     // Create CamerasChild
     // We will be returning the resulting pointer (synchronously) to our caller.
@@ -164,7 +165,7 @@ int CamerasChild::AddDeviceChangeCallback(DeviceChangeCallback* aCallback)
   return DeviceChangeCallback::AddDeviceChangeCallback(aCallback);
 }
 
-bool
+mozilla::ipc::IPCResult
 CamerasChild::RecvReplyFailure(void)
 {
   LOG((__PRETTY_FUNCTION__));
@@ -172,10 +173,10 @@ CamerasChild::RecvReplyFailure(void)
   mReceivedReply = true;
   mReplySuccess = false;
   monitor.Notify();
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 CamerasChild::RecvReplySuccess(void)
 {
   LOG((__PRETTY_FUNCTION__));
@@ -183,10 +184,10 @@ CamerasChild::RecvReplySuccess(void)
   mReceivedReply = true;
   mReplySuccess = true;
   monitor.Notify();
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 CamerasChild::RecvReplyNumberOfCapabilities(const int& numdev)
 {
   LOG((__PRETTY_FUNCTION__));
@@ -195,7 +196,7 @@ CamerasChild::RecvReplyNumberOfCapabilities(const int& numdev)
   mReplySuccess = true;
   mReplyInteger = numdev;
   monitor.Notify();
-  return true;
+  return IPC_OK();
 }
 
 // Helper function to dispatch calls to the IPC Thread and
@@ -221,7 +222,7 @@ public:
     Dispatch();
   }
 
-  const T& ReturnValue() const {
+  T ReturnValue() const {
     if (mSuccess) {
       return mSuccessValue;
     } else {
@@ -312,7 +313,7 @@ CamerasChild::NumberOfCaptureDevices(CaptureEngine aCapEngine)
   return dispatcher.ReturnValue();
 }
 
-bool
+mozilla::ipc::IPCResult
 CamerasChild::RecvReplyNumberOfCaptureDevices(const int& numdev)
 {
   LOG((__PRETTY_FUNCTION__));
@@ -321,7 +322,7 @@ CamerasChild::RecvReplyNumberOfCaptureDevices(const int& numdev)
   mReplySuccess = true;
   mReplyInteger = numdev;
   monitor.Notify();
-  return true;
+  return IPC_OK();
 }
 
 int
@@ -362,7 +363,7 @@ CamerasChild::GetCaptureCapability(CaptureEngine aCapEngine,
   return dispatcher.ReturnValue();
 }
 
-bool
+mozilla::ipc::IPCResult
 CamerasChild::RecvReplyGetCaptureCapability(const CaptureCapability& ipcCapability)
 {
   LOG((__PRETTY_FUNCTION__));
@@ -377,7 +378,7 @@ CamerasChild::RecvReplyGetCaptureCapability(const CaptureCapability& ipcCapabili
   mReplyCapability.codecType = static_cast<webrtc::VideoCodecType>(ipcCapability.codecType());
   mReplyCapability.interlaced = ipcCapability.interlaced();
   monitor.Notify();
-  return true;
+  return IPC_OK();
 }
 
 int
@@ -385,7 +386,8 @@ CamerasChild::GetCaptureDevice(CaptureEngine aCapEngine,
                                unsigned int list_number, char* device_nameUTF8,
                                const unsigned int device_nameUTF8Length,
                                char* unique_idUTF8,
-                               const unsigned int unique_idUTF8Length)
+                               const unsigned int unique_idUTF8Length,
+                               bool* scary)
 {
   LOG((__PRETTY_FUNCTION__));
   nsCOMPtr<nsIRunnable> runnable =
@@ -399,14 +401,18 @@ CamerasChild::GetCaptureDevice(CaptureEngine aCapEngine,
   if (dispatcher.Success()) {
     base::strlcpy(device_nameUTF8, mReplyDeviceName.get(), device_nameUTF8Length);
     base::strlcpy(unique_idUTF8, mReplyDeviceID.get(), unique_idUTF8Length);
+    if (scary) {
+      *scary = mReplyScary;
+    }
     LOG(("Got %s name %s id", device_nameUTF8, unique_idUTF8));
   }
   return dispatcher.ReturnValue();
 }
 
-bool
+mozilla::ipc::IPCResult
 CamerasChild::RecvReplyGetCaptureDevice(const nsCString& device_name,
-                                        const nsCString& device_id)
+                                        const nsCString& device_id,
+                                        const bool& scary)
 {
   LOG((__PRETTY_FUNCTION__));
   MonitorAutoLock monitor(mReplyMonitor);
@@ -414,8 +420,9 @@ CamerasChild::RecvReplyGetCaptureDevice(const nsCString& device_name,
   mReplySuccess = true;
   mReplyDeviceName = device_name;
   mReplyDeviceID = device_id;
+  mReplyScary = scary;
   monitor.Notify();
-  return true;
+  return IPC_OK();
 }
 
 int
@@ -444,7 +451,7 @@ CamerasChild::AllocateCaptureDevice(CaptureEngine aCapEngine,
 }
 
 
-bool
+mozilla::ipc::IPCResult
 CamerasChild::RecvReplyAllocateCaptureDevice(const int& numdev)
 {
   LOG((__PRETTY_FUNCTION__));
@@ -453,7 +460,7 @@ CamerasChild::RecvReplyAllocateCaptureDevice(const int& numdev)
   mReplySuccess = true;
   mReplyInteger = numdev;
   monitor.Notify();
-  return true;
+  return IPC_OK();
 }
 
 int
@@ -635,7 +642,7 @@ CamerasChild::ShutdownChild()
   CamerasSingleton::FakeDeviceChangeEventThread() = nullptr;
 }
 
-bool
+mozilla::ipc::IPCResult
 CamerasChild::RecvDeliverFrame(const CaptureEngine& capEngine,
                                const int& capId,
                                mozilla::ipc::Shmem&& shmem,
@@ -655,14 +662,14 @@ CamerasChild::RecvDeliverFrame(const CaptureEngine& capEngine,
     LOG(("DeliverFrame called with dead callback"));
   }
   SendReleaseFrame(shmem);
-  return true;
+  return IPC_OK();
 }
 
-bool
+mozilla::ipc::IPCResult
 CamerasChild::RecvDeviceChange()
 {
   this->OnDeviceChange();
-  return true;
+  return IPC_OK();
 }
 
 int
@@ -687,7 +694,7 @@ CamerasChild::SetFakeDeviceChangeEvents()
   return 0;
 }
 
-bool
+mozilla::ipc::IPCResult
 CamerasChild::RecvFrameSizeChange(const CaptureEngine& capEngine,
                                   const int& capId,
                                   const int& w, const int& h)
@@ -699,7 +706,7 @@ CamerasChild::RecvFrameSizeChange(const CaptureEngine& capEngine,
   } else {
     LOG(("Frame size change with dead callback"));
   }
-  return true;
+  return IPC_OK();
 }
 
 void

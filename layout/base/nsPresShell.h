@@ -67,9 +67,13 @@ typedef nsClassHashtable<nsUint64HashKey, mozilla::CSSIntRegion> VisibleRegions;
 
 } // namespace mozilla
 
-// 250ms.  This is actually pref-controlled, but we use this value if we fail
+// This is actually pref-controlled, but we use this value if we fail
 // to get the pref for any reason.
+#ifdef MOZ_WIDGET_ANDROID
 #define PAINTLOCK_EVENT_DELAY 250
+#else
+#define PAINTLOCK_EVENT_DELAY 5
+#endif
 
 class PresShell final : public nsIPresShell,
                         public nsStubDocumentObserver,
@@ -103,7 +107,6 @@ public:
   void Init(nsIDocument* aDocument, nsPresContext* aPresContext,
             nsViewManager* aViewManager, mozilla::StyleSetHandle aStyleSet);
   virtual void Destroy() override;
-  virtual void MakeZombie() override;
 
   virtual void UpdatePreferenceStyles() override;
 
@@ -212,14 +215,14 @@ public:
   virtual already_AddRefed<SourceSurface>
   RenderNode(nsIDOMNode* aNode,
              nsIntRegion* aRegion,
-             nsIntPoint& aPoint,
-             nsIntRect* aScreenRect,
+             const mozilla::LayoutDeviceIntPoint aPoint,
+             mozilla::LayoutDeviceIntRect* aScreenRect,
              uint32_t aFlags) override;
 
   virtual already_AddRefed<SourceSurface>
   RenderSelection(nsISelection* aSelection,
-                  nsIntPoint& aPoint,
-                  nsIntRect* aScreenRect,
+                  const mozilla::LayoutDeviceIntPoint aPoint,
+                  mozilla::LayoutDeviceIntRect* aScreenRect,
                   uint32_t aFlags) override;
 
   virtual already_AddRefed<nsPIDOMWindowOuter> GetRootWindow() override;
@@ -577,8 +580,8 @@ protected:
                       nsISelection* aSelection,
                       nsIntRegion* aRegion,
                       nsRect aArea,
-                      nsIntPoint& aPoint,
-                      nsIntRect* aScreenRect,
+                      const mozilla::LayoutDeviceIntPoint aPoint,
+                      mozilla::LayoutDeviceIntRect* aScreenRect,
                       uint32_t aFlags);
 
   /**

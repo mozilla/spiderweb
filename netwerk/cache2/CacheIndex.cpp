@@ -27,7 +27,7 @@
 #define kMinUnwrittenChanges   300
 #define kMinDumpInterval       20000 // in milliseconds
 #define kMaxBufSize            16384
-#define kIndexVersion          0x00000001
+#define kIndexVersion          0x00000002
 #define kUpdateIndexStartDelay 50000 // in milliseconds
 
 #define INDEX_NAME      "index"
@@ -122,22 +122,11 @@ public:
           // If frecency hasn't changed simply replace the pointer
           mIndex->mFrecencyArray.ReplaceRecord(mOldRecord, entry->mRec);
         } else {
-          // It is expected that when the frecency is changed the new value is
-          // always bigger than the old one. There is also a special case when
-          // we zero the frecency if eviction of the entry fails. If the above
-          // isn't true, this algorithm might not work properly and needs to be
-          // changed.
-          MOZ_ASSERT(entry->mRec->mFrecency == 0 ||
-                     entry->mRec->mFrecency > mOldFrecency);
-
           // Remove old pointer and insert the new one at the end of the array
           mIndex->mFrecencyArray.RemoveRecord(mOldRecord);
           mIndex->mFrecencyArray.AppendRecord(entry->mRec);
         }
       } else if (entry->mRec->mFrecency != mOldFrecency) {
-        MOZ_ASSERT(entry->mRec->mFrecency == 0 ||
-                   entry->mRec->mFrecency > mOldFrecency);
-
         // Move the element at the end of the array
         mIndex->mFrecencyArray.RemoveRecord(entry->mRec);
         mIndex->mFrecencyArray.AppendRecord(entry->mRec);
@@ -720,14 +709,13 @@ CacheIndex::EnsureEntryExists(const SHA1Sum::Hash *aHash)
 // static
 nsresult
 CacheIndex::InitEntry(const SHA1Sum::Hash *aHash,
-                      uint32_t             aAppId,
+                      OriginAttrsHash      aOriginAttrsHash,
                       bool                 aAnonymous,
-                      bool                 aInIsolatedMozBrowser,
                       bool                 aPinned)
 {
-  LOG(("CacheIndex::InitEntry() [hash=%08x%08x%08x%08x%08x, appId=%u, "
-       "anonymous=%d, inIsolatedMozBrowser=%d, pinned=%d]", LOGSHA1(aHash),
-       aAppId, aAnonymous, aInIsolatedMozBrowser, aPinned));
+  LOG(("CacheIndex::InitEntry() [hash=%08x%08x%08x%08x%08x, "
+       "originAttrsHash=%llx, anonymous=%d, pinned=%d]", LOGSHA1(aHash),
+       aOriginAttrsHash, aAnonymous, aPinned));
 
   MOZ_ASSERT(CacheFileIOManager::IsOnIOThread());
 
@@ -760,7 +748,7 @@ CacheIndex::InitEntry(const SHA1Sum::Hash *aHash,
       MOZ_ASSERT(entry);
       MOZ_ASSERT(entry->IsFresh());
 
-      if (IsCollision(entry, aAppId, aAnonymous, aInIsolatedMozBrowser)) {
+      if (IsCollision(entry, aOriginAttrsHash, aAnonymous)) {
         index->mIndexNeedsUpdate = true; // TODO Does this really help in case of collision?
         reinitEntry = true;
       } else {
@@ -778,7 +766,7 @@ CacheIndex::InitEntry(const SHA1Sum::Hash *aHash,
       if (updated) {
         MOZ_ASSERT(updated->IsFresh());
 
-        if (IsCollision(updated, aAppId, aAnonymous, aInIsolatedMozBrowser)) {
+        if (IsCollision(updated, aOriginAttrsHash, aAnonymous)) {
           index->mIndexNeedsUpdate = true;
           reinitEntry = true;
         } else {
@@ -789,7 +777,7 @@ CacheIndex::InitEntry(const SHA1Sum::Hash *aHash,
       } else {
         MOZ_ASSERT(entry->IsFresh());
 
-        if (IsCollision(entry, aAppId, aAnonymous, aInIsolatedMozBrowser)) {
+        if (IsCollision(entry, aOriginAttrsHash, aAnonymous)) {
           index->mIndexNeedsUpdate = true;
           reinitEntry = true;
         } else {
@@ -817,10 +805,10 @@ CacheIndex::InitEntry(const SHA1Sum::Hash *aHash,
     }
 
     if (updated) {
-      updated->Init(aAppId, aAnonymous, aInIsolatedMozBrowser, aPinned);
+      updated->Init(aOriginAttrsHash, aAnonymous, aPinned);
       updated->MarkDirty();
     } else {
-      entry->Init(aAppId, aAnonymous, aInIsolatedMozBrowser, aPinned);
+      entry->Init(aOriginAttrsHash, aAnonymous, aPinned);
       entry->MarkDirty();
     }
   }
@@ -1504,22 +1492,20 @@ CacheIndex::IsIndexUsable()
 // static
 bool
 CacheIndex::IsCollision(CacheIndexEntry *aEntry,
-                        uint32_t         aAppId,
-                        bool             aAnonymous,
-                        bool             aInIsolatedMozBrowser)
+                        OriginAttrsHash  aOriginAttrsHash,
+                        bool             aAnonymous)
 {
   if (!aEntry->IsInitialized()) {
     return false;
   }
 
-  if (aEntry->AppId() != aAppId || aEntry->Anonymous() != aAnonymous ||
-      aEntry->InIsolatedMozBrowser() != aInIsolatedMozBrowser) {
+  if (aEntry->Anonymous() != aAnonymous ||
+      aEntry->OriginAttrsHash() != aOriginAttrsHash) {
     LOG(("CacheIndex::IsCollision() - Collision detected for entry hash=%08x"
-         "%08x%08x%08x%08x, expected values: appId=%u, anonymous=%d, "
-         "inIsolatedMozBrowser=%d; actual values: appId=%u, anonymous=%d, "
-         "inIsolatedMozBrowser=%d]",
-         LOGSHA1(aEntry->Hash()), aAppId, aAnonymous, aInIsolatedMozBrowser,
-         aEntry->AppId(), aEntry->Anonymous(), aEntry->InIsolatedMozBrowser()));
+         "%08x%08x%08x%08x, expected values: originAttrsHash=%llx, "
+         "anonymous=%d; actual values: originAttrsHash=%llx, anonymous=%d]",
+         LOGSHA1(aEntry->Hash()), aOriginAttrsHash, aAnonymous,
+         aEntry->OriginAttrsHash(), aEntry->Anonymous()));
     return true;
   }
 
@@ -2668,10 +2654,8 @@ CacheIndex::InitEntryFromDiskData(CacheIndexEntry *aEntry,
   aEntry->MarkDirty();
   aEntry->MarkFresh();
 
-  // Bug 1201042 - will pass OriginAttributes directly.
-  aEntry->Init(aMetaData->OriginAttributes().mAppId,
+  aEntry->Init(GetOriginAttrsHash(aMetaData->OriginAttributes()),
                aMetaData->IsAnonymous(),
-               aMetaData->OriginAttributes().mInIsolatedMozBrowser,
                aMetaData->Pinned());
 
   uint32_t expirationTime;

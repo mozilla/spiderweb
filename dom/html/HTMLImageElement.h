@@ -49,6 +49,9 @@ public:
   // Element
   virtual bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override;
 
+  // EventTarget
+  virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+
   // nsIDOMHTMLImageElement
   NS_DECL_NSIDOMHTMLIMAGEELEMENT
 
@@ -67,7 +70,8 @@ public:
   NS_IMETHOD_(bool) IsAttributeMapped(const nsIAtom* aAttribute) const override;
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const override;
 
-  virtual nsresult PreHandleEvent(EventChainPreVisitor& aVisitor) override;
+  virtual nsresult GetEventTargetParent(
+                     EventChainPreVisitor& aVisitor) override;
 
   bool IsHTMLFocusable(bool aWithMouse, bool *aIsFocusable, int32_t *aTabIndex) override;
 
@@ -89,6 +93,8 @@ public:
 
   virtual EventStates IntrinsicState() const override;
   virtual nsresult Clone(mozilla::dom::NodeInfo *aNodeInfo, nsINode **aResult) const override;
+
+  virtual void NodeInfoChanged() override;
 
   nsresult CopyInnerTo(Element* aDest);
 

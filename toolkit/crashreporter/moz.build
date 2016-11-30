@@ -53,6 +53,12 @@ DIRS += [
     'client',
 ]
 
+if CONFIG['NIGHTLY_BUILD']:
+    DIRS += [
+        'jsoncpp/src/lib_json',
+        'minidump-analyzer',
+    ]
+
 if CONFIG['MOZ_CRASHREPORTER_INJECTOR']:
     DIRS += ['injector']
     UNIFIED_SOURCES += [
@@ -107,8 +113,8 @@ LOCAL_INCLUDES += [
     'google-breakpad/src',
 ]
 
-PYTHON_UNIT_TESTS += [
-    'tools/unit-symbolstore.py',
+PYTHON_UNITTEST_MANIFESTS += [
+    'tools/python.ini',
 ]
 
 include('/toolkit/crashreporter/crashreporter.mozbuild')

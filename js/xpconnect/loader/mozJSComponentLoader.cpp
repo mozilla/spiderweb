@@ -154,6 +154,7 @@ private:
 };
 
 static nsresult
+MOZ_FORMAT_PRINTF(2, 3)
 ReportOnCallerUTF8(JSContext* callerContext,
                    const char* format, ...) {
     if (!callerContext) {
@@ -165,16 +166,19 @@ ReportOnCallerUTF8(JSContext* callerContext,
 
     char* buf = JS_vsmprintf(format, ap);
     if (!buf) {
+        va_end(ap);
         return NS_ERROR_OUT_OF_MEMORY;
     }
 
     JS_ReportErrorUTF8(callerContext, "%s", buf);
     JS_smprintf_free(buf);
 
+    va_end(ap);
     return NS_OK;
 }
 
 static nsresult
+MOZ_FORMAT_PRINTF(2, 3)
 ReportOnCallerUTF8(JSCLContextHelper& helper,
                    const char* format, ...)
 {
@@ -183,11 +187,12 @@ ReportOnCallerUTF8(JSCLContextHelper& helper,
 
     char* buf = JS_vsmprintf(format, ap);
     if (!buf) {
+        va_end(ap);
         return NS_ERROR_OUT_OF_MEMORY;
     }
 
     helper.reportErrorAfterPop(buf);
-
+    va_end(ap);
     return NS_OK;
 }
 
@@ -725,16 +730,26 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
         // The script wasn't in the cache , so compile it now.
         LOG(("Slow loading %s\n", nativePath.get()));
 
-        // Note - if mReuseLoaderGlobal is true, then we can't do lazy source,
-        // because we compile things as functions (rather than script), and lazy
-        // source isn't supported in that configuration. That's ok though,
-        // because we only do mReuseLoaderGlobal on b2g, where we invoke
-        // setDiscardSource(true) on the entire global.
+        // Use lazy source if both of these conditions hold:
+        //
+        // (1) mReuseLoaderGlobal is false. If mReuseLoaderGlobal is true, we
+        //     can't do lazy source because we compile things as functions
+        //     (rather than script), and lazy source isn't supported in that
+        //     configuration. That's ok though, because we only do
+        //     mReuseLoaderGlobal on b2g, where we invoke setDiscardSource(true)
+        //     on the entire global.
+        //
+        // (2) We're using the startup cache. Non-lazy source + startup cache
+        //     regresses installer size (due to source code stored in XDR
+        //     encoded modules in omni.ja). Also, XDR decoding is relatively
+        //     fast. Content processes don't use the startup cache, so we want
+        //     them to use non-lazy source code to enable lazy parsing.
+        //     See bug 1303754.
         CompileOptions options(cx);
         options.setNoScriptRval(mReuseLoaderGlobal ? false : true)
                .setVersion(JSVERSION_LATEST)
                .setFileAndLine(nativePath.get(), 1)
-               .setSourceIsLazy(!mReuseLoaderGlobal);
+               .setSourceIsLazy(!mReuseLoaderGlobal && !!cache);
 
         if (realFile) {
 #ifdef HAVE_PR_MEMMAP

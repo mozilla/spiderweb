@@ -52,9 +52,8 @@ class Parser:
         self.parser = None
         self.tu = TranslationUnit(type, name)
         self.direction = None
-        self.errout = None
 
-    def parse(self, input, filename, includedirs, errout):
+    def parse(self, input, filename, includedirs):
         assert os.path.isabs(filename)
 
         if filename in Parser.parsed:
@@ -69,7 +68,6 @@ class Parser:
         self.filename = filename
         self.includedirs = includedirs
         self.tu.filename = filename
-        self.errout = errout
 
         Parser.parsed[filename] = self
         Parser.parseStack.append(Parser.current)
@@ -78,11 +76,9 @@ class Parser:
         try:
             ast = self.parser.parse(input=input, lexer=self.lexer,
                                     debug=self.debug)
-        except ParseError, p:
-            print >>errout, p
-            return None
+        finally:
+            Parser.current = Parser.parseStack.pop()
 
-        Parser.current = Parser.parseStack.pop()
         return ast
 
     def resolveIncludePath(self, filepath):
@@ -158,7 +154,7 @@ tokens = [
 
 t_COLONCOLON = '::'
 
-literals = '(){}[]<>;:,~'
+literals = '(){}[]<>;:,'
 t_ignore = ' \f\t\v'
 
 def t_linecomment(t):
@@ -257,7 +253,7 @@ def p_IncludeStmt(p):
     """IncludeStmt : INCLUDE PROTOCOL ID
                    | INCLUDE ID"""
     loc = locFromTok(p, 1)
- 
+
     Parser.current.loc = loc
     if 4 == len(p):
         id = p[3]
@@ -272,7 +268,7 @@ def p_IncludeStmt(p):
         raise ParseError(loc, "can't locate include file `%s'"% (
                 inc.file))
 
-    inc.tu = Parser(type, id).parse(open(path).read(), path, Parser.current.includedirs, Parser.current.errout)
+    inc.tu = Parser(type, id).parse(open(path).read(), path, Parser.current.includedirs)
     p[0] = inc
 
 def p_UsingStmt(p):
@@ -525,12 +521,9 @@ def p_MessageBody(p):
 def p_MessageId(p):
     """MessageId : ID
                  | __DELETE__
-                 | DELETE
-                 | '~' ID"""
+                 | DELETE"""
     loc = locFromTok(p, 1)
-    if 3 == len(p):
-        _error(loc, "sorry, `%s()' destructor syntax is a relic from a bygone era.  Declare `__delete__()' in the `%s' protocol instead", p[1]+p[2], p[2])
-    elif 'delete' == p[1]:
+    if 'delete' == p[1]:
         _error(loc, "`delete' is a reserved identifier")
     p[0] = [ loc, p[1] ]
 
@@ -610,7 +603,7 @@ def p_Transition(p):
                   | Trigger DELETE ';'"""
     if 'delete' == p[2]:
         _error(locFromTok(p, 1), "`delete' is a reserved identifier")
-    
+
     loc, trigger = p[1]
     if 6 == len(p):
         nextstates = p[4]
@@ -740,27 +733,17 @@ def p_Type(p):
     p[0] = p[2]
 
 def p_BasicType(p):
-    """BasicType : ScalarType
-                 | ScalarType '[' ']'"""
+    """BasicType : CxxID
+                 | CxxID '[' ']'"""
+    # ID == CxxType; we forbid qnames here,
+    # in favor of the |using| declaration
+    if not isinstance(p[1], TypeSpec):
+        loc, id = p[1]
+        p[1] = TypeSpec(loc, QualifiedId(loc, id))
     if 4 == len(p):
         p[1].array = 1
     p[0] = p[1]
 
-def p_ScalarType(p):
-    """ScalarType : ActorType
-                  | CxxID"""    # ID == CxxType; we forbid qnames here,
-                                # in favor of the |using| declaration
-    if isinstance(p[1], TypeSpec):
-        p[0] = p[1]
-    else:
-        loc, id = p[1]
-        p[0] = TypeSpec(loc, QualifiedId(loc, id))
-
-def p_ActorType(p):
-    """ActorType : ID ':' State"""
-    loc = locFromTok(p, 1)
-    p[0] = TypeSpec(loc, QualifiedId(loc, p[1]), state=p[3])
- 
 def p_MaybeNullable(p):
     """MaybeNullable : NULLABLE
                      | """

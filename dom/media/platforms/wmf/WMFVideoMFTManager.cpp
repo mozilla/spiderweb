@@ -8,7 +8,7 @@
 #include <winsdkver.h>
 #include "WMFVideoMFTManager.h"
 #include "MediaDecoderReader.h"
-#include "MediaPrefs.h"
+#include "gfxPrefs.h"
 #include "WMFUtils.h"
 #include "ImageContainer.h"
 #include "VideoUtils.h"
@@ -18,9 +18,7 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "MediaInfo.h"
-#include "MediaPrefs.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Preferences.h"
 #include "nsWindowsHelpers.h"
 #include "gfx2DGlue.h"
 #include "gfxWindowsPlatform.h"
@@ -32,6 +30,7 @@
 #include "GMPUtils.h" // For SplitAt. TODO: Move SplitAt to a central place.
 #include "MP4Decoder.h"
 #include "VPXDecoder.h"
+#include "mozilla/SyncRunnable.h"
 
 #define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 
@@ -59,24 +58,16 @@ const GUID MFVideoFormat_VP90 =
 };
 #endif
 
-const CLSID CLSID_WebmMfVp8Dec =
+const CLSID CLSID_WebmMfVpxDec =
 {
-  0x451e3cb7,
-  0x2622,
-  0x4ba5,
-  {0x8e, 0x1d, 0x44, 0xb3, 0xc4, 0x1d, 0x09, 0x24}
-};
-
-const CLSID CLSID_WebmMfVp9Dec =
-{
-  0x7ab4bd2,
-  0x1979,
-  0x4fcd,
-  {0xa6, 0x97, 0xdf, 0x9a, 0xd1, 0x5b, 0x34, 0xfe}
+  0xe3aaf548,
+  0xc9a4,
+  0x4c6e,
+  { 0x23, 0x4d, 0x5a, 0xda, 0x37, 0x4b, 0x00, 0x00 }
 };
 
 namespace mozilla {
-  
+
 LayersBackend
 GetCompositorBackendType(layers::KnowsCompositor* aKnowsCompositor)
 {
@@ -147,8 +138,8 @@ WMFVideoMFTManager::GetMFTGUID()
   MOZ_ASSERT(mStreamType != Unknown);
   switch (mStreamType) {
     case H264: return CLSID_CMSH264DecoderMFT;
-    case VP8: return CLSID_WebmMfVp8Dec;
-    case VP9: return CLSID_WebmMfVp9Dec;
+    case VP8: return CLSID_WebmMfVpxDec;
+    case VP9: return CLSID_WebmMfVpxDec;
     default: return GUID_NULL;
   };
 }
@@ -178,6 +169,7 @@ StaticAutoPtr<D3DDLLBlacklistingCache> sD3D9BlacklistingCache;
 // If a blacklisted DLL is found, return its information, otherwise "".
 static const nsCString&
 FindDXVABlacklistedDLL(StaticAutoPtr<D3DDLLBlacklistingCache>& aDLLBlacklistingCache,
+                       const nsCString& aBlacklist,
                        const char* aDLLBlacklistPrefName)
 {
   NS_ASSERTION(NS_IsMainThread(), "Must be on main thread.");
@@ -189,16 +181,7 @@ FindDXVABlacklistedDLL(StaticAutoPtr<D3DDLLBlacklistingCache>& aDLLBlacklistingC
     ClearOnShutdown(&aDLLBlacklistingCache);
   }
 
-  if (XRE_GetProcessType() == GeckoProcessType_GPU) {
-    // The blacklist code doesn't support running in
-    // the GPU process yet.
-    aDLLBlacklistingCache->mBlacklistPref.SetLength(0);
-    aDLLBlacklistingCache->mBlacklistedDLL.SetLength(0);
-    return aDLLBlacklistingCache->mBlacklistedDLL;
-  }
-
-  nsAdoptingCString blacklist = Preferences::GetCString(aDLLBlacklistPrefName);
-  if (blacklist.IsEmpty()) {
+  if (aBlacklist.IsEmpty()) {
     // Empty blacklist -> No blacklisting.
     aDLLBlacklistingCache->mBlacklistPref.SetLength(0);
     aDLLBlacklistingCache->mBlacklistedDLL.SetLength(0);
@@ -206,17 +189,17 @@ FindDXVABlacklistedDLL(StaticAutoPtr<D3DDLLBlacklistingCache>& aDLLBlacklistingC
   }
 
   // Detect changes in pref.
-  if (aDLLBlacklistingCache->mBlacklistPref.Equals(blacklist)) {
+  if (aDLLBlacklistingCache->mBlacklistPref.Equals(aBlacklist)) {
     // Same blacklist -> Return same result (i.e., don't check DLLs again).
     return aDLLBlacklistingCache->mBlacklistedDLL;
   }
   // Adopt new pref now, so we don't work on it again.
-  aDLLBlacklistingCache->mBlacklistPref = blacklist;
+  aDLLBlacklistingCache->mBlacklistPref = aBlacklist;
 
   // media.wmf.disable-d3d*-for-dlls format: (whitespace is trimmed)
   // "dll1.dll: 1.2.3.4[, more versions...][; more dlls...]"
   nsTArray<nsCString> dlls;
-  SplitAt(";", blacklist, dlls);
+  SplitAt(";", aBlacklist, dlls);
   for (const auto& dll : dlls) {
     nsTArray<nsCString> nameAndVersions;
     SplitAt(":", dll, nameAndVersions);
@@ -301,12 +284,14 @@ FindDXVABlacklistedDLL(StaticAutoPtr<D3DDLLBlacklistingCache>& aDLLBlacklistingC
 static const nsCString&
 FindD3D11BlacklistedDLL() {
   return FindDXVABlacklistedDLL(sD3D11BlacklistingCache,
+                                gfx::gfxVars::PDMWMFDisableD3D11Dlls(),
                                 "media.wmf.disable-d3d11-for-dlls");
 }
 
 static const nsCString&
 FindD3D9BlacklistedDLL() {
   return FindDXVABlacklistedDLL(sD3D9BlacklistingCache,
+                                gfx::gfxVars::PDMWMFDisableD3D9Dlls(),
                                 "media.wmf.disable-d3d9-for-dlls");
 }
 
@@ -324,10 +309,8 @@ public:
     NS_ASSERTION(NS_IsMainThread(), "Must be on main thread.");
     nsACString* failureReason = &mFailureReason;
     nsCString secondFailureReason;
-    bool allowD3D11 = (XRE_GetProcessType() == GeckoProcessType_GPU) ||
-                      MediaPrefs::PDMWMFAllowD3D11();
     if (mBackend == LayersBackend::LAYERS_D3D11 &&
-        allowD3D11 && IsWin8OrLater()) {
+      gfxPrefs::PDMWMFAllowD3D11() && IsWin8OrLater()) {
       const nsCString& blacklistedDLL = FindD3D11BlacklistedDLL();
       if (!blacklistedDLL.IsEmpty()) {
         failureReason->AppendPrintf("D3D11 blacklisted with DLL %s",
@@ -389,7 +372,9 @@ WMFVideoMFTManager::InitializeDXVA(bool aForceD3D9)
   if (NS_IsMainThread()) {
     event->Run();
   } else {
-    NS_DispatchToMainThread(event, NS_DISPATCH_SYNC);
+    // This logic needs to run on the main thread
+    nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
+    mozilla::SyncRunnable::DispatchToThread(mainThread, event);
   }
   mDXVA2Manager = event->mDXVA2Manager;
 
@@ -442,8 +427,7 @@ bool
 WMFVideoMFTManager::InitInternal(bool aForceD3D9)
 {
   mUseHwAccel = false; // default value; changed if D3D setup succeeds.
-  bool useDxva = InitializeDXVA(aForceD3D9 ||
-                                mStreamType == VP8 || mStreamType == VP9);
+  bool useDxva = InitializeDXVA(aForceD3D9);
 
   RefPtr<MFTDecoder> decoder(new MFTDecoder());
 
@@ -456,8 +440,7 @@ WMFVideoMFTManager::InitInternal(bool aForceD3D9)
     attr->GetUINT32(MF_SA_D3D_AWARE, &aware);
     attr->SetUINT32(CODECAPI_AVDecNumWorkerThreads,
       WMFDecoderModule::GetNumDecoderThreads());
-    if ((XRE_GetProcessType() != GeckoProcessType_GPU) &&
-        MediaPrefs::PDMWMFLowLatencyEnabled()) {
+    if (gfxPrefs::PDMWMFLowLatencyEnabled()) {
       hr = attr->SetUINT32(CODECAPI_AVLowLatencyMode, TRUE);
       if (SUCCEEDED(hr)) {
         LOG("Enabling Low Latency Mode");
@@ -488,6 +471,10 @@ WMFVideoMFTManager::InitInternal(bool aForceD3D9)
   }
 
   if (!mUseHwAccel) {
+    // Use VP8/9 MFT only if HW acceleration is available
+    if (mStreamType == VP9 || mStreamType == VP8) {
+      return false;
+    }
     Telemetry::Accumulate(Telemetry::MEDIA_DECODER_BACKEND_USED,
                           uint32_t(media::MediaDecoderBackend::WMFSoftware));
   }
@@ -517,6 +504,15 @@ WMFVideoMFTManager::SetDecoderMediaTypes()
 
   hr = inputType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_MixedInterlaceOrProgressive);
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
+
+  // MSFT MFT needs this frame size set for VP9?
+  if (mStreamType == VP9 || mStreamType == VP8) {
+    hr = inputType->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+    NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
+
+    hr = MFSetAttributeSize(inputType, MF_MT_FRAME_SIZE, mVideoInfo.ImageRect().width, mVideoInfo.ImageRect().height);
+    NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
+  }
 
   RefPtr<IMFMediaType> outputType;
   hr = wmf::MFCreateMediaType(getter_AddRefs(outputType));
@@ -614,7 +610,9 @@ WMFVideoMFTManager::CanUseDXVA(IMFMediaType* aType)
   if (NS_IsMainThread()) {
     event->Run();
   } else {
-    NS_DispatchToMainThread(event, NS_DISPATCH_SYNC);
+    // This logic needs to run on the main thread
+    nsCOMPtr<nsIThread> mainThread = do_GetMainThread();
+    mozilla::SyncRunnable::DispatchToThread(mainThread, event);
   }
 
   return event->mSupportsConfig;

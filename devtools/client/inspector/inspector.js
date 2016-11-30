@@ -29,20 +29,19 @@ const {ComputedViewTool} = require("devtools/client/inspector/computed/computed"
 const {FontInspector} = require("devtools/client/inspector/fonts/fonts");
 const {HTMLBreadcrumbs} = require("devtools/client/inspector/breadcrumbs");
 const {InspectorSearch} = require("devtools/client/inspector/inspector-search");
-const {LayoutViewTool} = require("devtools/client/inspector/layout/layout");
-const {MarkupView} = require("devtools/client/inspector/markup/markup");
+const MarkupView = require("devtools/client/inspector/markup/markup");
 const {RuleViewTool} = require("devtools/client/inspector/rules/rules");
 const {ToolSidebar} = require("devtools/client/inspector/toolsidebar");
 const {ViewHelpers} = require("devtools/client/shared/widgets/view-helpers");
 const clipboardHelper = require("devtools/shared/platform/clipboard");
 
 const {LocalizationHelper, localizeMarkup} = require("devtools/shared/l10n");
-const INSPECTOR_L10N = new LocalizationHelper("devtools/locale/inspector.properties");
-const TOOLBOX_L10N = new LocalizationHelper("devtools/locale/toolbox.properties");
+const INSPECTOR_L10N =
+      new LocalizationHelper("devtools/client/locales/inspector.properties");
+const TOOLBOX_L10N = new LocalizationHelper("devtools/client/locales/toolbox.properties");
 
 // Sidebar dimensions
 const INITIAL_SIDEBAR_SIZE = 350;
-const MIN_SIDEBAR_SIZE = 50;
 
 // If the toolbox width is smaller than given amount of pixels,
 // the sidebar automatically switches from 'landscape' to 'portrait' mode.
@@ -104,7 +103,6 @@ function Inspector(toolbox) {
   this.onTextBoxContextMenu = this.onTextBoxContextMenu.bind(this);
   this._updateSearchResultsLabel = this._updateSearchResultsLabel.bind(this);
   this.onNewSelection = this.onNewSelection.bind(this);
-  this.onBeforeNewSelection = this.onBeforeNewSelection.bind(this);
   this.onDetached = this.onDetached.bind(this);
   this.onPaneToggleButtonClicked = this.onPaneToggleButtonClicked.bind(this);
   this._onMarkupFrameLoad = this._onMarkupFrameLoad.bind(this);
@@ -130,7 +128,12 @@ Inspector.prototype = {
     yield this._cssPropertiesLoaded;
     yield this.target.makeRemote();
     yield this._getPageStyle();
-    let defaultSelection = yield this._getDefaultNodeForSelection();
+
+    // This may throw if the document is still loading and we are
+    // refering to a dead about:blank document
+    let defaultSelection = yield this._getDefaultNodeForSelection()
+      .catch(this._handleRejectionIfNotDestroyed);
+
     return yield this._deferredOpen(defaultSelection);
   }),
 
@@ -214,13 +217,12 @@ Inspector.prototype = {
   _deferredOpen: function (defaultSelection) {
     let deferred = defer();
 
+    this.breadcrumbs = new HTMLBreadcrumbs(this);
+
     this.walker.on("new-root", this.onNewRoot);
 
     this.selection.on("new-node-front", this.onNewSelection);
-    this.selection.on("before-new-node-front", this.onBeforeNewSelection);
     this.selection.on("detached-front", this.onDetached);
-
-    this.breadcrumbs = new HTMLBreadcrumbs(this);
 
     if (this.target.isLocalTab) {
       // Show a warning when the debugger is paused.
@@ -258,8 +260,10 @@ Inspector.prototype = {
       this.isReady = true;
 
       // All the components are initialized. Let's select a node.
-      this.selection.setNodeFront(defaultSelection, "inspector-open");
-      this.markup.expandNode(this.selection.nodeFront);
+      if (defaultSelection) {
+        this.selection.setNodeFront(defaultSelection, "inspector-open");
+        this.markup.expandNode(this.selection.nodeFront);
+      }
 
       // And setup the toolbar only now because it may depend on the document.
       this.setupToolbar();
@@ -457,7 +461,6 @@ Inspector.prototype = {
       className: "inspector-sidebar-splitter",
       initialWidth: INITIAL_SIDEBAR_SIZE,
       initialHeight: INITIAL_SIDEBAR_SIZE,
-      minSize: MIN_SIDEBAR_SIZE,
       splitterSize: 1,
       endPanelControl: true,
       startPanel: this.InspectorTabPanel({
@@ -539,6 +542,12 @@ Inspector.prototype = {
 
     let defaultTab = Services.prefs.getCharPref("devtools.inspector.activeSidebar");
 
+    this._setDefaultSidebar = (event, toolId) => {
+      Services.prefs.setCharPref("devtools.inspector.activeSidebar", toolId);
+    };
+
+    this.sidebar.on("select", this._setDefaultSidebar);
+
     if (!Services.prefs.getBoolPref("devtools.fontinspector.enabled") &&
        defaultTab == "fontinspector") {
       defaultTab = "ruleview";
@@ -555,23 +564,12 @@ Inspector.prototype = {
       INSPECTOR_L10N.getStr("inspector.sidebar.computedViewTitle"),
       defaultTab == "computedview");
 
-    this._setDefaultSidebar = (event, toolId) => {
-      Services.prefs.setCharPref("devtools.inspector.activeSidebar", toolId);
-    };
-
-    this.sidebar.on("select", this._setDefaultSidebar);
-
     this.ruleview = new RuleViewTool(this, this.panelWin);
     this.computedview = new ComputedViewTool(this, this.panelWin);
 
     if (Services.prefs.getBoolPref("devtools.layoutview.enabled")) {
-      this.sidebar.addExistingTab(
-        "layoutview",
-        INSPECTOR_L10N.getStr("inspector.sidebar.layoutViewTitle"),
-        defaultTab == "layoutview"
-      );
-
-      this.layoutview = new LayoutViewTool(this, this.panelWin);
+      const {LayoutView} = this.browserRequire("devtools/client/inspector/layout/layout");
+      this.layoutview = new LayoutView(this, this.panelWin);
     }
 
     if (this.target.form.animationsActor) {
@@ -647,11 +645,14 @@ Inspector.prototype = {
         this.onEyeDropperButtonClicked = this.onEyeDropperButtonClicked.bind(this);
         this.eyeDropperButton = this.panelDoc
                                     .getElementById("inspector-eyedropper-toggle");
-        this.eyeDropperButton.style.display = "initial";
+        this.eyeDropperButton.disabled = false;
+        this.eyeDropperButton.title = INSPECTOR_L10N.getStr("inspector.eyedropper.label");
         this.eyeDropperButton.addEventListener("click", this.onEyeDropperButtonClicked);
       }, e => console.error(e));
     } else {
-      this.panelDoc.getElementById("inspector-eyedropper-toggle").style.display = "none";
+      let eyeDropperButton = this.panelDoc.getElementById("inspector-eyedropper-toggle");
+      eyeDropperButton.disabled = true;
+      eyeDropperButton.title = INSPECTOR_L10N.getStr("eyedropper.disabled.title");
     }
   },
 
@@ -847,16 +848,6 @@ Inspector.prototype = {
   },
 
   /**
-   * When a new node is selected, before the selection has changed.
-   */
-  onBeforeNewSelection: function (event, node) {
-    if (this.breadcrumbs.indexOf(node) == -1) {
-      // only clear locks if we'd have to update breadcrumbs
-      this.clearPseudoClasses();
-    }
-  },
-
-  /**
    * When a node is deleted, select its parent node or the defaultNode if no
    * parent is found (may happen when deleting an iframe inside which the
    * node was selected).
@@ -919,7 +910,6 @@ Inspector.prototype = {
     this.teardownToolbar();
     this.breadcrumbs.destroy();
     this.selection.off("new-node-front", this.onNewSelection);
-    this.selection.off("before-new-node-front", this.onBeforeNewSelection);
     this.selection.off("detached-front", this.onDetached);
     let markupDestroyer = this._destroyMarkup();
     this.panelWin.inspector = null;
@@ -1481,12 +1471,11 @@ Inspector.prototype = {
 
     // Insert the html and expect a childList markup mutation.
     let onMutations = this.once("markupmutation");
-    let {nodes} = yield this.walker.insertAdjacentHTML(this.selection.nodeFront,
-                                                       "beforeEnd", html);
+    yield this.walker.insertAdjacentHTML(this.selection.nodeFront, "beforeEnd", html);
     yield onMutations;
 
-    // Select the new node (this will auto-expand its parent).
-    this.selection.setNodeFront(nodes[0], "node-inserted");
+    // Expand the parent node.
+    this.markup.expandNode(this.selection.nodeFront);
   }),
 
   /**
@@ -1546,16 +1535,6 @@ Inspector.prototype = {
         this.emit("console-var-ready");
       });
     });
-  },
-
-  /**
-   * Clear any pseudo-class locks applied to the current hierarchy.
-   */
-  clearPseudoClasses: function () {
-    if (!this.walker) {
-      return promise.resolve();
-    }
-    return this.walker.clearPseudoClassLocks().catch(this._handleRejectionIfNotDestroyed);
   },
 
   /**

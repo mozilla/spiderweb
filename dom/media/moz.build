@@ -54,11 +54,7 @@ if CONFIG['MOZ_FMP4']:
 if CONFIG['MOZ_WEBRTC']:
     DIRS += ['bridge']
 
-if CONFIG['MOZ_OMX_DECODER']:
-    DIRS += ['omx']
-
 TEST_DIRS += [
-    'compiledtest',
     'gtest',
 ]
 
@@ -170,11 +166,6 @@ IPDL_SOURCES += [
     'webrtc/PWebrtcGlobal.ipdl'
 ]
 
-if CONFIG['MOZ_B2G']:
-    EXPORTS.mozilla += [
-        'MediaPermissionGonk.h',
-    ]
-
 EXPORTS.mozilla.dom += [
     'AudioStreamTrack.h',
     'AudioTrack.h',
@@ -271,11 +262,6 @@ UNIFIED_SOURCES += [
 if CONFIG['OS_TARGET'] == 'WINNT':
   SOURCES += [ 'ThreadPoolCOMListener.cpp' ]
 
-if CONFIG['MOZ_B2G']:
-    SOURCES += [
-        'MediaPermissionGonk.cpp',
-    ]
-
 # DecoderTraits.cpp needs to be built separately because of Mac OS X headers.
 SOURCES += [
     'DecoderTraits.cpp',
@@ -300,7 +286,6 @@ EXTRA_JS_MODULES.media += [
 LOCAL_INCLUDES += [
     '/caps',
     '/dom/base',
-    '/dom/camera',
     '/layout/generic',
     '/layout/xul',
     '/netwerk/base',
@@ -323,9 +308,6 @@ if CONFIG['OS_TARGET'] == 'WINNT':
     DEFINES['WEBRTC_WIN'] = True
 else:
     DEFINES['WEBRTC_POSIX'] = True
-
-if CONFIG['MOZ_OMX_DECODER']:
-    DEFINES['MOZ_OMX_DECODER'] = True
 
 if CONFIG['ANDROID_VERSION'] > '15':
     DEFINES['MOZ_OMX_WEBM_DECODER'] = True

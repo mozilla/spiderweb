@@ -2,7 +2,7 @@
 PKT_SAVED_OVERLAY is the view itself and contains all of the methods to manipute the overlay and messaging.
 It does not contain any logic for saving or communication with the extension or server.
 */
-var PKT_SAVED_OVERLAY = function (options)
+var PKT_SAVED_OVERLAY = function(options)
 {
     var myself = this;
     this.inited = false;
@@ -28,14 +28,11 @@ var PKT_SAVED_OVERLAY = function (options)
     this.cxt_removed = 0;
     this.justaddedsuggested = false;
     this.fillTagContainer = function(tags, container, tagclass) {
-        var newtagleft = 0;
         container.children().remove();
         for (var i = 0; i < tags.length; i++) {
             var newtag = $('<li><a href="#" class="token_tag ' + tagclass + '">' + tags[i] + '</a></li>');
             container.append(newtag);
-            var templeft = newtag.position().left;
             this.cxt_suggested_available++;
-            newtagleft = templeft;
         }
     };
     this.fillUserTags = function() {
@@ -148,7 +145,7 @@ var PKT_SAVED_OVERLAY = function (options)
 
         if ((inputleft + listleft + 20) > leftwidth)
         {
-            $('.token-input-list').css('left', Math.min(((inputleft + listleftnatural - leftwidth + 20)*-1), 0) + 'px');
+            $('.token-input-list').css('left', Math.min(((inputleft + listleftnatural - leftwidth + 20) * -1), 0) + 'px');
         }
         else
         {
@@ -430,7 +427,7 @@ var PKT_SAVED_OVERLAY = function (options)
         {
             return '';
         }
-        return String(s).replace(/[&<>"']/g, function (str) {
+        return String(s).replace(/[&<>"']/g, function(str) {
             return sanitizeMap[str];
         });
     };
@@ -510,10 +507,10 @@ PKT_SAVED_OVERLAY.prototype = {
 
 
 // Layer between Bookmarklet and Extensions
-var PKT_SAVED = function () {};
+var PKT_SAVED = function() {};
 
 PKT_SAVED.prototype = {
-    init: function () {
+    init: function() {
         if (this.inited) {
             return;
         }
@@ -599,12 +596,11 @@ $(function()
     // send an async message to get string data
     thePKT_SAVED.sendMessage("initL10N", {
             tos: [
-                'https://'+ pocketHost +'/tos?s=ffi&t=tos&tv=panel_tryit',
-                'https://'+ pocketHost +'/privacy?s=ffi&t=privacypolicy&tv=panel_tryit'
+                'https://' + pocketHost + '/tos?s=ffi&t=tos&tv=panel_tryit',
+                'https://' + pocketHost + '/privacy?s=ffi&t=privacypolicy&tv=panel_tryit'
             ]
         }, function(resp) {
         window.pocketStrings = resp.strings;
         window.thePKT_SAVED.create();
     });
 });
-

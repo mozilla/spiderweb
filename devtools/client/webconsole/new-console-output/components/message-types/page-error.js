@@ -28,6 +28,7 @@ PageError.defaultProps = {
 
 function PageError(props) {
   const {
+    dispatch,
     message,
     open,
     serviceContainer,
@@ -41,13 +42,16 @@ function PageError(props) {
     messageText: messageBody,
     repeat,
     stacktrace,
-    frame
+    frame,
+    exceptionDocURL,
+    timeStamp,
   } = message;
 
   const childProps = {
+    dispatch,
     messageId,
     open,
-    collapsible: true,
+    collapsible: Array.isArray(stacktrace),
     source,
     type,
     level,
@@ -58,6 +62,8 @@ function PageError(props) {
     frame,
     stacktrace,
     serviceContainer,
+    exceptionDocURL,
+    timeStamp,
   };
   return Message(childProps);
 }

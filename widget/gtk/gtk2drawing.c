@@ -16,6 +16,7 @@
 #include "prinrval.h"
 
 #include <math.h>
+#include <stdbool.h> // for MOZ_ASSERT_UNREACHABLE
 
 #define XTHICKNESS(style) (style->xthickness)
 #define YTHICKNESS(style) (style->ythickness)
@@ -1157,7 +1158,6 @@ calculate_button_inner_rect(GtkWidget* button, GdkRectangle* rect,
 
     return MOZ_GTK_SUCCESS;
 }
-
 
 static gint
 calculate_arrow_rect(GtkWidget* arrow, GdkRectangle* rect,
@@ -2977,6 +2977,10 @@ moz_gtk_get_widget_border(WidgetNodeType widget, gint* left, gint* top,
         ensure_tab_widget();
         w = gTabWidget;
         break;
+    case MOZ_GTK_TOOLTIP:
+        // In GTK 2 the spacing between box is set to 4.
+        *left = *top = *right = *bottom = 4;
+        return MOZ_GTK_SUCCESS;
     /* These widgets have no borders, since they are not containers. */
     case MOZ_GTK_SPLITTER_HORIZONTAL:
     case MOZ_GTK_SPLITTER_VERTICAL:
@@ -2998,7 +3002,6 @@ moz_gtk_get_widget_border(WidgetNodeType widget, gint* left, gint* top,
     case MOZ_GTK_MENUSEPARATOR:
     /* These widgets have no borders.*/
     case MOZ_GTK_SPINBUTTON:
-    case MOZ_GTK_TOOLTIP:
     case MOZ_GTK_WINDOW:
     case MOZ_GTK_RESIZER:
     case MOZ_GTK_MENUARROW:
@@ -3198,6 +3201,10 @@ moz_gtk_get_scrollbar_metrics(MozGtkScrollbarMetrics *metrics)
         GTK_RANGE(gHorizScrollbarWidget)->min_slider_size;
 
     return MOZ_GTK_SUCCESS;
+}
+void
+moz_gtk_get_widget_min_size(WidgetNodeType aGtkWidgetType, int* width, int* height) {
+  MOZ_ASSERT_UNREACHABLE("get_widget_min_size not available for GTK2");
 }
 
 gint

@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 pref("security.tls.version.min", 1);
-pref("security.tls.version.max", 3);
+pref("security.tls.version.max", 4);
 pref("security.tls.version.fallback-limit", 3);
 pref("security.tls.insecure_fallback_hosts", "");
 pref("security.tls.unrestricted_rc4_fallback", false);
@@ -14,7 +14,6 @@ pref("security.ssl.require_safe_negotiation",  false);
 pref("security.ssl.enable_ocsp_stapling", true);
 pref("security.ssl.enable_false_start", true);
 pref("security.ssl.false_start.require-npn", false);
-pref("security.ssl.enable_npn", true);
 pref("security.ssl.enable_alpn", true);
 
 pref("security.ssl3.ecdhe_rsa_aes_128_gcm_sha256", true);
@@ -47,6 +46,8 @@ pref("security.password_lifetime",       30);
 // 2: detect Family Safety mode and import the root
 // (This is only relevant to Windows 8.1)
 pref("security.family_safety.mode", 2);
+
+pref("security.enterprise_roots.enabled", false);
 
 pref("security.OCSP.enabled", 1);
 pref("security.OCSP.require", false);

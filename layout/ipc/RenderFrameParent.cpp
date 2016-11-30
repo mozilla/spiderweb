@@ -115,20 +115,22 @@ RenderFrameParent::Init(nsFrameLoader* aFrameLoader)
   mAsyncPanZoomEnabled = lm && lm->AsyncPanZoomEnabled();
 
   TabParent* browser = TabParent::GetFrom(mFrameLoader);
+
+  // Note: we ignore any IPC errors here when talking to the compositor. If
+  // the compositor process has gone away, these connections will automatically
+  // be recreated. However the infrastructure for doing so relies on
+  // RenderFrameParent having successfully initialized, so this function must
+  // succeed in allocating a layer tree id and returning true.
   if (XRE_IsParentProcess()) {
     // Our remote frame will push layers updates to the compositor,
     // and we'll keep an indirect reference to that tree.
     browser->Manager()->AsContentParent()->AllocateLayerTreeId(browser, &mLayersId);
     if (lm && lm->AsClientLayerManager()) {
-      if (!lm->AsClientLayerManager()->GetRemoteRenderer()->SendNotifyChildCreated(mLayersId)) {
-        return false;
-      }
+      lm->AsClientLayerManager()->GetRemoteRenderer()->SendNotifyChildCreated(mLayersId);
     }
   } else if (XRE_IsContentProcess()) {
     ContentChild::GetSingleton()->SendAllocateLayerTreeId(browser->Manager()->ChildID(), browser->GetTabId(), &mLayersId);
-    if (!CompositorBridgeChild::Get()->SendNotifyChildCreated(mLayersId)) {
-      return false;
-    }
+    CompositorBridgeChild::Get()->SendNotifyChildCreated(mLayersId);
   }
 
   mInitted = true;
@@ -225,7 +227,7 @@ RenderFrameParent::ActorDestroy(ActorDestroyReason why)
 {
   if (mLayersId != 0) {
     if (XRE_IsParentProcess()) {
-      GPUProcessManager::Get()->DeallocateLayerTreeId(mLayersId);
+      GPUProcessManager::Get()->UnmapLayerTreeId(mLayersId, OtherPid());
     } else if (XRE_IsContentProcess()) {
       ContentChild::GetSingleton()->SendDeallocateLayerTreeId(mLayersId);
     }
@@ -234,11 +236,11 @@ RenderFrameParent::ActorDestroy(ActorDestroyReason why)
   mFrameLoader = nullptr;
 }
 
-bool
+mozilla::ipc::IPCResult
 RenderFrameParent::RecvNotifyCompositorTransaction()
 {
   TriggerRepaint();
-  return true;
+  return IPC_OK();
 }
 
 void

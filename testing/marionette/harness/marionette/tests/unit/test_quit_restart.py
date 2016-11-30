@@ -65,9 +65,8 @@ class TestQuitRestart(MarionetteTestCase):
         self.assertNotEqual(self.marionette.get_pref("browser.startup.page"), 3)
 
     def test_in_app_restart_with_callback(self):
-        def callback():
-            self.marionette._request_in_app_shutdown(shutdown_flags='eRestart')
-        self.marionette.restart(in_app=True, callback=callback)
+        self.marionette.restart(in_app=True,
+                                callback=lambda: self.shutdown(restart=True))
 
         self.assertEqual(self.marionette.session_id, self.session_id)
 
@@ -92,8 +91,7 @@ class TestQuitRestart(MarionetteTestCase):
         self.assertNotEqual(self.marionette.get_pref("browser.startup.page"), 3)
 
     def test_in_app_quit_with_callback(self):
-        self.marionette.quit(in_app=True,
-                             callback=self.marionette._request_in_app_shutdown)
+        self.marionette.quit(in_app=True, callback=self.shutdown)
         self.assertEqual(self.marionette.session, None)
         with self.assertRaisesRegexp(MarionetteException, "Please start a session"):
             self.marionette.get_url()
@@ -101,3 +99,74 @@ class TestQuitRestart(MarionetteTestCase):
         self.marionette.start_session()
         self.assertNotEqual(self.marionette.session_id, self.session_id)
         self.assertNotEqual(self.marionette.get_pref("browser.startup.page"), 3)
+
+    def test_reset_context_after_quit_by_set_context(self):
+        # Check that we are in content context which is used by default in Marionette
+        self.assertNotIn('chrome://', self.marionette.get_url(),
+                         "Context doesn't default to content")
+
+        self.marionette.set_context('chrome')
+        self.marionette.quit(in_app=True)
+        self.assertEqual(self.marionette.session, None)
+        self.marionette.start_session()
+        self.assertNotIn('chrome://', self.marionette.get_url(),
+                         "Not in content context after quit with using_context")
+
+    def test_reset_context_after_quit_by_using_context(self):
+        # Check that we are in content context which is used by default in Marionette
+        self.assertNotIn('chrome://', self.marionette.get_url(),
+                         "Context doesn't default to content")
+
+        with self.marionette.using_context('chrome'):
+            self.marionette.quit(in_app=True)
+            self.assertEqual(self.marionette.session, None)
+            self.marionette.start_session()
+            self.assertNotIn('chrome://', self.marionette.get_url(),
+                             "Not in content context after quit with using_context")
+
+    def test_keep_context_after_restart_by_set_context(self):
+        # Check that we are in content context which is used by default in Marionette
+        self.assertNotIn('chrome://', self.marionette.get_url(),
+                         "Context doesn't default to content")
+
+        # restart while we are in chrome context
+        self.marionette.set_context('chrome')
+        self.marionette.restart(in_app=True)
+
+        # An in-app restart will keep the same process id only on Linux
+        if self.marionette.session_capabilities['platformName'] == 'linux':
+            self.assertEqual(self.marionette.session["processId"], self.pid)
+        else:
+            self.assertNotEqual(self.marionette.session["processId"], self.pid)
+
+        self.assertIn('chrome://', self.marionette.get_url(),
+                      "Not in chrome context after a restart with set_context")
+
+    def test_keep_context_after_restart_by_using_context(self):
+        # Check that we are in content context which is used by default in Marionette
+        self.assertNotIn('chrome://', self.marionette.get_url(),
+                         "Context doesn't default to content")
+
+        # restart while we are in chrome context
+        with self.marionette.using_context('chrome'):
+            self.marionette.restart(in_app=True)
+
+            # An in-app restart will keep the same process id only on Linux
+            if self.marionette.session_capabilities['platformName'] == 'linux':
+                self.assertEqual(self.marionette.session["processId"], self.pid)
+            else:
+                self.assertNotEqual(self.marionette.session["processId"], self.pid)
+
+            self.assertIn('chrome://', self.marionette.get_url(),
+                          "Not in chrome context after a restart with using_context")
+
+    def shutdown(self, restart=False):
+        self.marionette.set_context("chrome")
+        self.marionette.execute_script("""
+            Components.utils.import("resource://gre/modules/Services.jsm");
+            let flags = Ci.nsIAppStartup.eAttemptQuit
+            if(arguments[0]) {
+              flags |= Ci.nsIAppStartup.eRestart;
+            }
+            Services.startup.quit(flags);
+        """, script_args=[restart])

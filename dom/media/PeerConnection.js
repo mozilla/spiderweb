@@ -40,6 +40,16 @@ const PC_RECEIVER_CID = Components.ID("{d974b814-8fde-411c-8c45-b86791b81030}");
 const PC_COREQUEST_CID = Components.ID("{74b2122d-65a8-4824-aa9e-3d664cb75dc2}");
 const PC_DTMF_SENDER_CID = Components.ID("{3610C242-654E-11E6-8EC0-6D1BE389A607}");
 
+function logMsg(msg, file, line, flag, winID) {
+  let scriptErrorClass = Cc["@mozilla.org/scripterror;1"];
+  let scriptError = scriptErrorClass.createInstance(Ci.nsIScriptError);
+  scriptError.initWithWindowID(msg, file, null, line, 0, flag,
+                               "content javascript", winID);
+  let console = Cc["@mozilla.org/consoleservice;1"].
+  getService(Ci.nsIConsoleService);
+  console.logMessage(scriptError);
+};
+
 // Global list of PeerConnection objects, so they can be cleaned up when
 // a page is torn down. (Maps inner window ID to an array of PC objects).
 function GlobalPCList() {
@@ -190,19 +200,6 @@ GlobalPCList.prototype = {
       } else if (data == "online") {
         this._networkdown = false;
       }
-    } else if (topic == "network:app-offline-status-changed") {
-      // App changed offline status. The subject contains the appId for which
-      // we need to check the status
-      let appId = subject.QueryInterface(Ci.nsIAppOfflineInfo).appId;
-      let ios = Cc['@mozilla.org/network/io-service;1'].getService(Ci.nsIIOService);
-      for (let winId in this._list) {
-        if (appId != this._list[winId]._appId) {
-          continue;
-        }
-        if (ios.isAppOffline(appId)) {
-          cleanupWinId(this._list, winId);
-        }
-      }
     } else if (topic == "gmp-plugin-crash") {
       if (subject instanceof Ci.nsIWritablePropertyBag2) {
         let pluginID = subject.getPropertyAsUint32("pluginID");
@@ -251,9 +248,7 @@ RTCIceCandidate.prototype = {
   }
 };
 
-function RTCSessionDescription() {
-  this.type = this.sdp = null;
-}
+function RTCSessionDescription() {}
 RTCSessionDescription.prototype = {
   classDescription: "RTCSessionDescription",
   classID: PC_SESSION_CID,
@@ -261,11 +256,41 @@ RTCSessionDescription.prototype = {
   QueryInterface: XPCOMUtils.generateQI([Ci.nsISupports,
                                          Ci.nsIDOMGlobalPropertyInitializer]),
 
-  init: function(win) { this._win = win; },
+  init: function(win) {
+    this._win = win;
+    this._winID = this._win.QueryInterface(Ci.nsIInterfaceRequestor)
+    .getInterface(Ci.nsIDOMWindowUtils).currentInnerWindowID;
+  },
 
-  __init: function(dict) {
-    this.type = dict.type;
-    this.sdp  = dict.sdp;
+  __init: function({ type, sdp }) {
+    Object.assign(this, { _type: type, _sdp: sdp });
+  },
+
+  get type() { return this._type; },
+  set type(type) {
+    this.warn();
+    this._type = type;
+  },
+
+  get sdp() { return this._sdp; },
+  set sdp(sdp) {
+    this.warn();
+    this._sdp = sdp;
+  },
+
+  warn: function() {
+    if (!this._warned) {
+      // Warn once per RTCSessionDescription about deprecated writable usage.
+      this.logWarning("RTCSessionDescription's members are readonly! " +
+                      "Writing to them is deprecated and will break soon!");
+      this._warned = true;
+    }
+  },
+
+  logWarning: function(msg) {
+    let err = this._win.Error();
+    logMsg(msg, err.fileName, err.lineNumber, Ci.nsIScriptError.warningFlag,
+           this._winID);
   }
 };
 
@@ -384,20 +409,10 @@ RTCPeerConnection.prototype = {
       this._mustValidateRTCConfiguration(rtcConfig,
         "RTCPeerConnection constructor passed invalid RTCConfiguration");
     }
-    // Save the appId
     var principal = Cu.getWebIDLCallerPrincipal();
-    this._appId = principal.appId;
     this._isChrome = Services.scriptSecurityManager.isSystemPrincipal(principal);
 
-    // Get the offline status for this appId
-    let appOffline = false;
-    if (this._appId != Ci.nsIScriptSecurityManager.NO_APP_ID &&
-        this._appId != Ci.nsIScriptSecurityManager.UNKNOWN_APP_ID) {
-      let ios = Cc['@mozilla.org/network/io-service;1'].getService(Ci.nsIIOService);
-      appOffline = ios.isAppOffline(this._appId);
-    }
-
-    if (_globalPCList._networkdown || appOffline) {
+    if (_globalPCList._networkdown) {
       throw new this._win.DOMException(
           "Can't create RTCPeerConnections when the network is down",
           "InvalidStateError");
@@ -412,6 +427,7 @@ RTCPeerConnection.prototype = {
     this.makeGetterSetterEH("onremovestream");
     this.makeGetterSetterEH("ondatachannel");
     this.makeGetterSetterEH("oniceconnectionstatechange");
+    this.makeGetterSetterEH("onicegatheringstatechange");
     this.makeGetterSetterEH("onidentityresult");
     this.makeGetterSetterEH("onpeeridentity");
     this.makeGetterSetterEH("onidpassertionerror");
@@ -582,11 +598,11 @@ RTCPeerConnection.prototype = {
       server.urls.forEach(urlStr => {
         let url = nicerNewURI(urlStr);
         if (url.scheme in { turn:1, turns:1 }) {
-          if (!server.username) {
+          if (server.username == undefined) {
             throw new this._win.DOMException(msg + " - missing username: " + urlStr,
                                              "InvalidAccessError");
           }
-          if (!server.credential) {
+          if (server.credential == undefined) {
             throw new this._win.DOMException(msg + " - missing credential: " + urlStr,
                                              "InvalidAccessError");
           }
@@ -658,13 +674,7 @@ RTCPeerConnection.prototype = {
   },
 
   logMsg: function(msg, file, line, flag) {
-    let scriptErrorClass = Cc["@mozilla.org/scripterror;1"];
-    let scriptError = scriptErrorClass.createInstance(Ci.nsIScriptError);
-    scriptError.initWithWindowID(msg, file, null, line, 0, flag,
-                                 "content javascript", this._winID);
-    let console = Cc["@mozilla.org/consoleservice;1"].
-      getService(Ci.nsIConsoleService);
-    console.logMessage(scriptError);
+    return logMsg(msg, file, line, flag, this._winID);
   },
 
   getEH: function(type) {
@@ -715,49 +725,6 @@ RTCPeerConnection.prototype = {
       options = optionsOrOnSuccess;
     }
     return this._legacyCatchAndCloseGuard(onSuccess, onError, () => {
-      // TODO: Remove error on constraint-like RTCOptions next cycle (1197021).
-      // Note that webidl bindings make o.mandatory implicit but not o.optional.
-      function convertLegacyOptions(o) {
-        // Detect (mandatory OR optional) AND no other top-level members.
-        let lcy = ((o.mandatory && Object.keys(o.mandatory).length) || o.optional) &&
-            Object.keys(o).length == (o.mandatory? 1 : 0) + (o.optional? 1 : 0);
-        if (!lcy) {
-          return false;
-        }
-        let old = o.mandatory || {};
-        if (o.mandatory) {
-          delete o.mandatory;
-        }
-        if (o.optional) {
-          o.optional.forEach(one => {
-            // The old spec had optional as an array of objects w/1 attribute each.
-            // Assumes our JS-webidl bindings only populate passed-in properties.
-            let key = Object.keys(one)[0];
-            if (key && old[key] === undefined) {
-              old[key] = one[key];
-            }
-          });
-          delete o.optional;
-        }
-        o.offerToReceiveAudio = old.OfferToReceiveAudio;
-        o.offerToReceiveVideo = old.OfferToReceiveVideo;
-        o.mozDontOfferDataChannel = old.MozDontOfferDataChannel;
-        o.mozBundleOnly = old.MozBundleOnly;
-        Object.keys(o).forEach(k => {
-          if (o[k] === undefined) {
-            delete o[k];
-          }
-        });
-        return true;
-      }
-
-      if (options && convertLegacyOptions(options)) {
-        this.logError(
-          "Mandatory/optional in createOffer options no longer works! Use " +
-            JSON.stringify(options) + " instead (note the case difference)!");
-        options = {};
-      }
-
       let origin = Cu.getWebIDLCallerPrincipal().origin;
       return this._chain(() => {
         let p = Promise.all([this.getPermission(), this._certificateReady])
@@ -1033,11 +1000,6 @@ RTCPeerConnection.prototype = {
     stream.getTracks().forEach(track => this.addTrack(track, stream));
   },
 
-  getStreamById: function(id) {
-    throw new this._win.DOMException("getStreamById not yet implemented",
-                                     "NotSupportedError");
-  },
-
   addTrack: function(track, stream) {
     if (stream.currentTime === undefined) {
       throw new this._win.DOMException("invalid stream.", "InvalidParameterError");
@@ -1209,6 +1171,7 @@ RTCPeerConnection.prototype = {
   changeIceGatheringState: function(state) {
     this._iceGatheringState = state;
     _globalPCList.notifyLifecycleObservers(this, "icegatheringstatechange");
+    this.dispatchEvent(new this._win.Event("icegatheringstatechange"));
   },
 
   changeIceConnectionState: function(state) {
@@ -1419,6 +1382,9 @@ PeerConnectionObserver.prototype = {
 
   handleIceConnectionStateChange: function(iceConnectionState) {
     let pc = this._dompc;
+    if (pc.iceConnectionState === iceConnectionState) {
+      return;
+    }
     if (pc.iceConnectionState === 'new') {
       var checking_histogram = Services.telemetry.getHistogramById("WEBRTC_ICE_CHECKING_RATE");
       if (iceConnectionState === 'checking') {
@@ -1451,15 +1417,19 @@ PeerConnectionObserver.prototype = {
   //   new        The object was just created, and no networking has occurred
   //              yet.
   //
-  //   gathering  The ICE engine is in the process of gathering candidates for
+  //   gathering  The ICE agent is in the process of gathering candidates for
   //              this RTCPeerConnection.
   //
-  //   complete   The ICE engine has completed gathering. Events such as adding
+  //   complete   The ICE agent has completed gathering. Events such as adding
   //              a new interface or a new TURN server will cause the state to
   //              go back to gathering.
   //
   handleIceGatheringStateChange: function(gatheringState) {
-    this._dompc.changeIceGatheringState(gatheringState);
+    let pc = this._dompc;
+    if (pc.iceGatheringState === gatheringState) {
+      return;
+    }
+    pc.changeIceGatheringState(gatheringState);
   },
 
   onStateChange: function(state) {
@@ -1597,8 +1567,6 @@ RTCPeerConnectionStatic.prototype = {
 
 function RTCDTMFSender(sender) {
   this._sender = sender;
-  this.duration = 100;
-  this.interToneGap = 70;
 }
 RTCDTMFSender.prototype = {
   classDescription: "RTCDTMFSender",
@@ -1626,10 +1594,8 @@ RTCDTMFSender.prototype = {
                                                    "InvalidStateError");
     }
 
-    this.duration = Math.max(40, Math.min(duration, 6000));
-
+    duration = Math.max(40, Math.min(duration, 6000));
     if (interToneGap < 30) interToneGap = 30;
-    this.interToneGap = interToneGap;
 
     tones = tones.toUpperCase();
 

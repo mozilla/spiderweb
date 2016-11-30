@@ -139,9 +139,11 @@ parent:
      * Tell the parent process a new accessible document has been created.
      * aParentDoc is the accessible document it was created in if any, and
      * aParentAcc is the id of the accessible in that document the new document
-     * is a child of.
+     * is a child of. aMsaaID is the MSAA id for this content process, and
+     * is only valid on Windows. Set to 0 on other platforms.
      */
-    async PDocAccessible(nullable PDocAccessible aParentDoc, uint64_t aParentAcc);
+    async PDocAccessible(nullable PDocAccessible aParentDoc, uint64_t aParentAcc,
+                         uint32_t aMsaaID);
 
     /*
      * Creates a new remoted nsIWidget connection for windowed plugins
@@ -153,7 +155,7 @@ parent:
     /**
      * Return native data of root widget
      */
-    sync GetWidgetNativeData() returns (WindowsHandle value);
+    nested(inside_cpow) sync GetWidgetNativeData() returns (WindowsHandle value);
 
     /**
      * Sends an NS_NATIVE_CHILD_OF_SHAREABLE_WINDOW to be adopted by the
@@ -585,9 +587,8 @@ parent:
 
     async InvokeDragSession(IPCDataTransfer[] transfers, uint32_t action,
                             OptionalShmem visualData,
-                            uint32_t width, uint32_t height,
                             uint32_t stride, uint8_t format,
-                            int32_t dragAreaX, int32_t dragAreaY);
+                            LayoutDeviceIntRect dragRect);
 
     async AudioChannelActivityNotification(uint32_t aAudioChannel,
                                            bool aActive);
@@ -598,6 +599,23 @@ parent:
     // arrive before the TabChild attempts to use its cross-process compositor
     // bridge.
     sync EnsureLayersConnected();
+
+    /**
+     * Notify parent that one or more entries have been added / removed from
+     * the child session history.
+     *
+     * @param aCount the updated number of entries in child session history
+     */
+    async NotifySessionHistoryChange(uint32_t aCount);
+
+    /**
+     * When the session history is across multiple root docshells, this function
+     * is used to notify parent that it needs to navigate to an entry out of
+     * local index of the child.
+     *
+     * @param aGlobalIndex The global index of history entry to navigate to.
+     */
+    async RequestCrossBrowserNavigation(uint32_t aGlobalIndex);
 
 child:
     /**
@@ -618,8 +636,6 @@ child:
                nsSizeMode sizeMode);
 
     async LoadURL(nsCString uri, ShowInfo info);
-
-    async CacheFileDescriptor(nsString path, FileDescriptor fd);
 
     async UpdateDimensions(CSSRect rect, CSSSize size,
                            ScreenOrientationInternal orientation,
@@ -801,11 +817,6 @@ child:
     async ThemeChanged(LookAndFeelInt[] lookAndFeelIntCache);
 
     /**
-     * Tell the child of an app's offline status
-     */
-    async AppOfflineStatus(uint32_t id, bool offline);
-
-    /**
      * Tell the browser that its frame loader has been swapped
      * with another.
      */
@@ -863,6 +874,38 @@ child:
      * @param aNewHandle The native window handle of the tab's top-level window.
      */
     async UpdateNativeWindowHandle(uintptr_t aNewHandle);
+
+    /**
+     * Called when the session history of this particular PBrowser has been
+     * attached to a grouped session history.
+     *
+     * @param aOffset           The number of entries in the grouped session
+     *                          history before this session history object.
+     */
+    async NotifyAttachGroupedSessionHistory(uint32_t aOffset);
+
+    /**
+     * Notify that the session history associated to this PBrowser has become
+     * the active history in the grouped session history.
+     *
+     * @param aGlobalLength      The up-to-date number of entries in the grouped
+     *                           session history.
+     * @param aTargetLocalIndex  The target local index to navigate to.
+     */
+    async NotifyPartialSessionHistoryActive(uint32_t aGlobalLength,
+                                            uint32_t aTargetLocalIndex);
+
+    /**
+     * Notify that the session history asssociates to this PBrowser has become
+     * an inactive history in the grouped session history.
+     */
+    async NotifyPartialSessionHistoryDeactive();
+
+    /**
+     * Tell the child that it is a fresh process created for a Large-Allocation
+     * load.
+     */
+    async SetFreshProcess();
 
 /*
  * FIXME: write protocol!

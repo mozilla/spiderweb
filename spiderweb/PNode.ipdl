@@ -8,11 +8,11 @@ namespace node {
 
 async protocol PNode
 {
-parent:
-  async Ping();
+both:
+  async Message(nsCString aMessage);
 
 child:
-  async Pong();
+  async StartNode(nsCString[] aInitArgs, nsCString aICUDataDir);
 
 };
 

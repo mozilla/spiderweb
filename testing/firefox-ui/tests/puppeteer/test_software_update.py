@@ -4,16 +4,17 @@
 
 import os
 
-from firefox_ui_harness.testcases import FirefoxTestCase
-
+from firefox_puppeteer import PuppeteerMixin
 from firefox_puppeteer.api.software_update import SoftwareUpdate
+from marionette import MarionetteTestCase
 
 
-class TestSoftwareUpdate(FirefoxTestCase):
+class TestSoftwareUpdate(PuppeteerMixin, MarionetteTestCase):
 
     def setUp(self):
-        FirefoxTestCase.setUp(self)
-        self.software_update = SoftwareUpdate(lambda: self.marionette)
+        super(TestSoftwareUpdate, self).setUp()
+
+        self.software_update = SoftwareUpdate(self.marionette)
 
         self.saved_mar_channels = self.software_update.mar_channels.channels
         self.software_update.mar_channels.channels = set(['expected', 'channels'])
@@ -22,7 +23,7 @@ class TestSoftwareUpdate(FirefoxTestCase):
         try:
             self.software_update.mar_channels.channels = self.saved_mar_channels
         finally:
-            FirefoxTestCase.tearDown(self)
+            super(TestSoftwareUpdate, self).tearDown()
 
     def test_abi(self):
         self.assertTrue(self.software_update.ABI)
@@ -68,11 +69,12 @@ class TestSoftwareUpdate(FirefoxTestCase):
         self.assertTrue(self.software_update.staging_directory)
 
 
-class TestUpdateChannel(FirefoxTestCase):
+class TestUpdateChannel(PuppeteerMixin, MarionetteTestCase):
 
     def setUp(self):
-        FirefoxTestCase.setUp(self)
-        self.software_update = SoftwareUpdate(lambda: self.marionette)
+        super(TestUpdateChannel, self).setUp()
+
+        self.software_update = SoftwareUpdate(self.marionette)
 
         self.saved_channel = self.software_update.update_channel.default_channel
         self.software_update.update_channel.default_channel = 'expected_channel'
@@ -81,7 +83,7 @@ class TestUpdateChannel(FirefoxTestCase):
         try:
             self.software_update.update_channel.default_channel = self.saved_channel
         finally:
-            FirefoxTestCase.tearDown(self)
+            super(TestUpdateChannel, self).tearDown()
 
     def test_update_channel_channel(self):
         self.assertEqual(self.software_update.update_channel.channel, self.saved_channel)
@@ -94,11 +96,12 @@ class TestUpdateChannel(FirefoxTestCase):
         self.assertEqual(self.software_update.update_channel.default_channel, 'new_channel')
 
 
-class TestMARChannels(FirefoxTestCase):
+class TestMARChannels(PuppeteerMixin, MarionetteTestCase):
 
     def setUp(self):
-        FirefoxTestCase.setUp(self)
-        self.software_update = SoftwareUpdate(lambda: self.marionette)
+        super(TestMARChannels, self).setUp()
+
+        self.software_update = SoftwareUpdate(self.marionette)
 
         self.saved_mar_channels = self.software_update.mar_channels.channels
         self.software_update.mar_channels.channels = set(['expected', 'channels'])
@@ -107,7 +110,7 @@ class TestMARChannels(FirefoxTestCase):
         try:
             self.software_update.mar_channels.channels = self.saved_mar_channels
         finally:
-            FirefoxTestCase.tearDown(self)
+            super(TestMARChannels, self).tearDown()
 
     def test_mar_channels_channels(self):
         self.assertEqual(self.software_update.mar_channels.channels, set(['expected', 'channels']))

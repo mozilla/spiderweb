@@ -37,6 +37,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/Telemetry.h"
+#include "gfxMathTable.h"
 #include "gfxSVGGlyphs.h"
 #include "gfx2DGlue.h"
 
@@ -723,10 +724,9 @@ gfxShapedText::SetGlyphs(uint32_t aIndex, CompressedGlyph aGlyph,
 #define ZWNJ 0x200C
 #define ZWJ  0x200D
 static inline bool
-IsDefaultIgnorable(uint32_t aChar)
+IsIgnorable(uint32_t aChar)
 {
-    return GetIdentifierModification(aChar) == XIDMOD_DEFAULT_IGNORABLE ||
-           aChar == ZWNJ || aChar == ZWJ;
+    return (IsDefaultIgnorable(aChar)) || aChar == ZWNJ || aChar == ZWJ;
 }
 
 void
@@ -742,7 +742,7 @@ gfxShapedText::SetMissingGlyph(uint32_t aIndex, uint32_t aChar, gfxFont *aFont)
     DetailedGlyph *details = AllocateDetailedGlyphs(aIndex, 1);
 
     details->mGlyphID = aChar;
-    if (IsDefaultIgnorable(aChar)) {
+    if (IsIgnorable(aChar)) {
         // Setting advance width to zero will prevent drawing the hexbox
         details->mAdvance = 0;
     } else {
@@ -760,7 +760,7 @@ gfxShapedText::SetMissingGlyph(uint32_t aIndex, uint32_t aChar, gfxFont *aFont)
 bool
 gfxShapedText::FilterIfIgnorable(uint32_t aIndex, uint32_t aCh)
 {
-    if (IsDefaultIgnorable(aCh)) {
+    if (IsIgnorable(aCh)) {
         // There are a few default-ignorables of Letter category (currently,
         // just the Hangul filler characters) that we'd better not discard
         // if they're followed by additional characters in the same cluster.
@@ -841,6 +841,7 @@ gfxFont::gfxFont(gfxFontEntry *aFontEntry, const gfxFontStyle *aFontStyle,
     mScaledFont(aScaledFont),
     mFontEntry(aFontEntry), mIsValid(true),
     mApplySyntheticBold(false),
+    mMathInitialized(false),
     mStyle(*aFontStyle),
     mAdjustedSize(0.0),
     mFUnitsConvFactor(-1.0f), // negative to indicate "not yet initialized"
@@ -1734,8 +1735,7 @@ private:
             mRunParams.context->EnsurePathBuilder();
             Matrix mat = mRunParams.dt->GetTransform();
             mFontParams.scaledFont->CopyGlyphsToBuilder(
-                buf, mRunParams.context->mPathBuilder,
-                mRunParams.dt->GetBackendType(), &mat);
+                buf, mRunParams.context->mPathBuilder, &mat);
         }
 
         mNumGlyphs = 0;
@@ -4006,4 +4006,22 @@ gfxFontStyle::AdjustForSubSuperscript(int32_t aAppUnitsPerDevPixel)
 
     // clear the variant field
     variantSubSuper = NS_FONT_VARIANT_POSITION_NORMAL;
+}
+
+bool
+gfxFont::TryGetMathTable()
+{
+    if (!mMathInitialized) {
+        mMathInitialized = true;
+
+        hb_face_t *face = GetFontEntry()->GetHBFace();
+        if (face) {
+            if (hb_ot_math_has_data(face)) {
+                mMathTable = MakeUnique<gfxMathTable>(face, GetAdjustedSize());
+            }
+            hb_face_destroy(face);
+        }
+    }
+
+    return !!mMathTable;
 }

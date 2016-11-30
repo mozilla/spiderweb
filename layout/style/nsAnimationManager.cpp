@@ -281,14 +281,6 @@ CSSAnimation::UpdateTiming(SeekFlag aSeekFlag, SyncNotifyFlag aSyncNotifyFlag)
   Animation::UpdateTiming(aSeekFlag, aSyncNotifyFlag);
 }
 
-TimeStamp
-CSSAnimation::ElapsedTimeToTimeStamp(const StickyTimeDuration&
-                                       aElapsedTime) const
-{
-  return AnimationTimeToTimeStamp(aElapsedTime +
-                                  mEffect->SpecifiedTiming().mDelay);
-}
-
 ////////////////////////// nsAnimationManager ////////////////////////////
 
 NS_IMPL_CYCLE_COLLECTION(nsAnimationManager, mEventDispatcher)
@@ -336,7 +328,7 @@ UpdateOldAnimationPropertiesWithNew(
   // Update the old from the new so we can keep the original object
   // identity (and any expando properties attached to it).
   if (aOld.GetEffect()) {
-    AnimationEffectReadOnly* oldEffect = aOld.GetEffect();
+    dom::AnimationEffectReadOnly* oldEffect = aOld.GetEffect();
     animationChanged = oldEffect->SpecifiedTiming() != aNewTiming;
     oldEffect->SetSpecifiedTiming(aNewTiming);
 

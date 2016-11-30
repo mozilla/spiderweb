@@ -314,18 +314,8 @@ public:
                  JS::Handle<JSObject*> aModuleRecord);
 
   nsScriptLoader* Loader() const { return mLoader; }
-  JSObject* ModuleRecord() const
-  {
-    if (mModuleRecord) {
-      JS::ExposeObjectToActiveJS(mModuleRecord);
-    }
-    return mModuleRecord;
-  }
-  JS::Value Exception() const
-  {
-    JS::ExposeValueToActiveJS(mException);
-    return mException;
-  }
+  JSObject* ModuleRecord() const { return mModuleRecord; }
+  JS::Value Exception() const { return mException; }
   nsIURI* BaseURL() const { return mBaseURL; }
 
   void SetInstantiationResult(JS::Handle<JS::Value> aMaybeException);
@@ -1392,6 +1382,7 @@ CSPAllowsInlineScript(nsIScriptElement *aElement, nsIDocument *aDocument)
   nsCOMPtr<nsIContent> scriptContent = do_QueryInterface(aElement);
   nsAutoString nonce;
   scriptContent->GetAttr(kNameSpaceID_None, nsGkAtoms::nonce, nonce);
+  bool parserCreated = aElement->GetParserCreated() != mozilla::dom::NOT_FROM_PARSER;
 
   // query the scripttext
   nsAutoString scriptText;
@@ -1399,7 +1390,7 @@ CSPAllowsInlineScript(nsIScriptElement *aElement, nsIDocument *aDocument)
 
   bool allowInlineScript = false;
   rv = csp->GetAllowsInline(nsIContentPolicy::TYPE_SCRIPT,
-                            nonce, scriptText,
+                            nonce, parserCreated, scriptText,
                             aElement->GetScriptLineNumber(),
                             &allowInlineScript);
   return allowInlineScript;

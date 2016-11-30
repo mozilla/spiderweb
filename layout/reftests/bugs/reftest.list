@@ -462,8 +462,8 @@ fuzzy-if(skiaContent,2,3) == 339289-1.html 339289-1-ref.html
 != 345563-sub.xhtml 345563-sup.xhtml
 == 346189-1.xul 346189-1-ref.xul
 fuzzy-if(skiaContent,4,2) == 346774-1a.html 346774-1-ref.html
-== 346774-1b.html 346774-1-ref.html
-== 346774-1c.html 346774-1-ref.html
+fuzzy-if(skiaContent,4,2) == 346774-1b.html 346774-1-ref.html
+fuzzy-if(skiaContent,4,2) == 346774-1c.html 346774-1-ref.html
 == 347348-1.xhtml 347348-1-ref.xhtml
 == 347496-1.xhtml 347496-1-ref.xhtml
 == 347912-1.html 347912-1-ref.html
@@ -809,7 +809,7 @@ fuzzy-if(skiaContent,1,500) == 393760-2.xml 393760-2-ref.xml
 == 394534-1.html 394534-1-ref.html
 == 394676-1.xhtml 394676-1-ref.xhtml
 == 395107-1.html 395107-1-ref.html
-== 395107-2.html 395107-2-ref.html
+fuzzy-if(Android,4,2) == 395107-2.html 395107-2-ref.html # bug 1309533 fuzzy after test rebucketed
 fuzzy-if(skiaContent,1,118) == 395107-3.html 395107-3-ref.html
 == 395107-4.html 395107-4-ref.html
 == 395107-5.html 395107-5-ref.html
@@ -1022,7 +1022,7 @@ fails-if(Android) fails-if(usesRepeatResampling) == 421885-1.xml 421885-1-ref.xm
 == 422678-1.html 422678-1-ref.html
 == 423130-1.html 423130-1-ref.html
 == 423385-1.html 423385-1-ref.html
-== 423599-1.html 423599-1-ref.html
+random-if(gtkWidget) == 423599-1.html 423599-1-ref.html # bug 1309095
 == 423676-1.html 423676-1-ref.html
 fails == 423823-1.html 423823-1-ref.html # scrolling rowgroups were removed in bug 28800
 == 424074-1.xul 424074-1-ref.xul
@@ -1394,7 +1394,7 @@ fuzzy-if(skiaContent,1,17000) == 498228-1.xul 498228-1-ref.xul
 == 501257-1.xhtml 501257-1-ref.xhtml
 == 501627-1.html 501627-1-ref.html
 == 502288-1.html 502288-1-ref.html
-== 502447-1.html 502447-1-ref.html
+fuzzy-if(gtkWidget,1,2) == 502447-1.html 502447-1-ref.html #Bug 1315834
 == 502795-1.html 502795-1-ref.html
 == 502942-1.html 502942-1-ref.html
 == 503364-1a.html 503364-1-ref.html
@@ -1820,7 +1820,7 @@ HTTP(..) == 983985-2.html 983985-2-ref.html
 == 985303-1a.html 985303-1-ref.html
 == 985303-1b.html 985303-1-ref.html
 == 987680-1.html 987680-1-ref.html
-fuzzy-if(d2d,1,36) == 991046-1.html 991046-1-ref.html
+fuzzy-if(d2d,1,601) == 991046-1.html 991046-1-ref.html
 pref(layout.css.overflow-clip-box.enabled,true) fuzzy-if(skiaContent,2,845) == 992447.html 992447-ref.html
 == 1003425-1.html 1003425-1-ref.html
 == 1003425-2.html 1003425-2-ref.html
@@ -1875,54 +1875,57 @@ fuzzy-if(skiaContent,1,800000) == 1119117-1b.html 1119117-1-ref.html
 == 1128354-1.html 1128354-1-ref.html
 == 1130231-1-button-padding-rtl.html 1130231-1-button-padding-rtl-ref.html
 == 1130231-2-button-padding-rtl.html 1130231-2-button-padding-rtl-ref.html
-skip-if(!B2G) == 1133905-1.html 1133905-ref.html
-skip-if(!B2G) == 1133905-2.html 1133905-ref.html
-skip-if(!B2G) == 1133905-3.html 1133905-ref.html
-skip-if(!B2G) == 1133905-4.html 1133905-ref.html
-skip-if(!B2G) == 1133905-5.html 1133905-ref.html
-skip-if(!B2G) == 1133905-6.html 1133905-ref.html
-skip-if(!B2G) == 1133905-1-v.html 1133905-ref-v.html
-skip-if(!B2G) == 1133905-2-v.html 1133905-ref-v.html
-skip-if(!B2G) == 1133905-3-v.html 1133905-ref-v.html
-skip-if(!B2G) == 1133905-4-v.html 1133905-ref-v.html
-skip-if(!B2G) fuzzy-if(B2G,61,336) == 1133905-5-v.html 1133905-ref-v.html
-skip-if(!B2G) fuzzy-if(B2G,77,287) == 1133905-6-v.html 1133905-ref-v.html
-skip-if(!B2G) == 1133905-1-h.html 1133905-ref-h.html
-skip-if(!B2G) == 1133905-2-h.html 1133905-ref-h.html
-skip-if(!B2G) == 1133905-3-h.html 1133905-ref-h.html
-skip-if(!B2G) == 1133905-4-h.html 1133905-ref-h.html
-skip-if(!B2G) == 1133905-5-h.html 1133905-ref-h.html
-skip-if(!B2G) == 1133905-6-h.html 1133905-ref-h.html
-skip-if(!B2G) == 1133905-1-vh.html 1133905-ref-vh.html
-skip-if(!B2G) == 1133905-2-vh.html 1133905-ref-vh.html
-skip-if(!B2G) == 1133905-3-vh.html 1133905-ref-vh.html
-skip-if(!B2G) == 1133905-4-vh.html 1133905-ref-vh.html
-skip-if(!B2G) fuzzy-if(B2G,102,720) == 1133905-5-vh.html 1133905-ref-vh.html
-skip-if(!B2G) fuzzy-if(B2G,102,945) == 1133905-6-vh.html 1133905-ref-vh.html
-skip-if(!B2G) == 1133905-1-rtl.html 1133905-ref-rtl.html
-skip-if(!B2G) == 1133905-2-rtl.html 1133905-ref-rtl.html
-skip-if(!B2G) == 1133905-3-rtl.html 1133905-ref-rtl.html
-skip-if(!B2G) == 1133905-4-rtl.html 1133905-ref-rtl.html
-skip-if(!B2G) == 1133905-5-rtl.html 1133905-ref-rtl.html
-skip-if(!B2G) == 1133905-6-rtl.html 1133905-ref-rtl.html
-skip-if(!B2G) fuzzy-if(B2G,21,175) == 1133905-1-v-rtl.html 1133905-ref-v-rtl.html
-skip-if(!B2G) fuzzy-if(B2G,20,174) == 1133905-2-v-rtl.html 1133905-ref-v-rtl.html
-skip-if(!B2G) fuzzy-if(B2G,64,181) == 1133905-3-v-rtl.html 1133905-ref-v-rtl.html
-skip-if(!B2G) == 1133905-4-v-rtl.html 1133905-ref-v-rtl.html
-skip-if(!B2G) fuzzy-if(B2G,33,180) == 1133905-5-v-rtl.html 1133905-ref-v-rtl.html
-skip-if(!B2G) fuzzy-if(B2G,77,219) == 1133905-6-v-rtl.html 1133905-ref-v-rtl.html
-skip-if(!B2G) == 1133905-1-h-rtl.html 1133905-ref-h-rtl.html
-skip-if(!B2G) == 1133905-2-h-rtl.html 1133905-ref-h-rtl.html
-skip-if(!B2G) == 1133905-3-h-rtl.html 1133905-ref-h-rtl.html
-skip-if(!B2G) == 1133905-4-h-rtl.html 1133905-ref-h-rtl.html
-skip-if(!B2G) == 1133905-5-h-rtl.html 1133905-ref-h-rtl.html
-skip-if(!B2G) == 1133905-6-h-rtl.html 1133905-ref-h-rtl.html
-skip-if(!B2G) fuzzy-if(B2G,21,175) == 1133905-1-vh-rtl.html 1133905-ref-vh-rtl.html
-skip-if(!B2G) fuzzy-if(B2G,62,176) == 1133905-2-vh-rtl.html 1133905-ref-vh-rtl.html
-skip-if(!B2G) fuzzy-if(B2G,23,176) == 1133905-3-vh-rtl.html 1133905-ref-vh-rtl.html
-skip-if(!B2G) == 1133905-4-vh-rtl.html 1133905-ref-vh-rtl.html
-skip-if(!B2G) fuzzy-if(B2G,102,577) == 1133905-5-vh-rtl.html 1133905-ref-vh-rtl.html
-skip-if(!B2G) fuzzy-if(B2G,102,877) == 1133905-6-vh-rtl.html 1133905-ref-vh-rtl.html
+# The 1133905-*.html reftests only make sense on platforms where both APZ and
+# <meta viewport> are enabled.
+# (Note: bug 1308702 covers these tests' failures on Android)
+skip-if(!Android) == 1133905-1.html 1133905-ref.html
+skip-if(!Android) == 1133905-2.html 1133905-ref.html
+skip-if(!Android) == 1133905-3.html 1133905-ref.html
+skip-if(!Android) == 1133905-4.html 1133905-ref.html
+skip-if(!Android) == 1133905-5.html 1133905-ref.html
+skip-if(!Android) == 1133905-6.html 1133905-ref.html
+skip-if(!Android) fails-if(Android) == 1133905-1-v.html 1133905-ref-v.html
+skip-if(!Android) fails-if(Android) == 1133905-2-v.html 1133905-ref-v.html
+skip-if(!Android) fails-if(Android) == 1133905-3-v.html 1133905-ref-v.html
+skip-if(!Android) == 1133905-4-v.html 1133905-ref-v.html
+skip-if(!Android) fails-if(Android) == 1133905-5-v.html 1133905-ref-v.html
+skip-if(!Android) fails-if(Android) == 1133905-6-v.html 1133905-ref-v.html
+skip-if(!Android) == 1133905-1-h.html 1133905-ref-h.html
+skip-if(!Android) == 1133905-2-h.html 1133905-ref-h.html
+skip-if(!Android) == 1133905-3-h.html 1133905-ref-h.html
+skip-if(!Android) == 1133905-4-h.html 1133905-ref-h.html
+skip-if(!Android) == 1133905-5-h.html 1133905-ref-h.html
+skip-if(!Android) == 1133905-6-h.html 1133905-ref-h.html
+skip-if(!Android) fails-if(Android) == 1133905-1-vh.html 1133905-ref-vh.html
+skip-if(!Android) fails-if(Android) == 1133905-2-vh.html 1133905-ref-vh.html
+skip-if(!Android) fails-if(Android) == 1133905-3-vh.html 1133905-ref-vh.html
+skip-if(!Android) == 1133905-4-vh.html 1133905-ref-vh.html
+skip-if(!Android) fails-if(Android) == 1133905-5-vh.html 1133905-ref-vh.html
+skip-if(!Android) fails-if(Android) == 1133905-6-vh.html 1133905-ref-vh.html
+skip-if(!Android) == 1133905-1-rtl.html 1133905-ref-rtl.html
+skip-if(!Android) == 1133905-2-rtl.html 1133905-ref-rtl.html
+skip-if(!Android) == 1133905-3-rtl.html 1133905-ref-rtl.html
+skip-if(!Android) == 1133905-4-rtl.html 1133905-ref-rtl.html
+skip-if(!Android) == 1133905-5-rtl.html 1133905-ref-rtl.html
+skip-if(!Android) == 1133905-6-rtl.html 1133905-ref-rtl.html
+skip-if(!Android) fails-if(Android) == 1133905-1-v-rtl.html 1133905-ref-v-rtl.html
+skip-if(!Android) fails-if(Android) == 1133905-2-v-rtl.html 1133905-ref-v-rtl.html
+skip-if(!Android) fails-if(Android) == 1133905-3-v-rtl.html 1133905-ref-v-rtl.html
+skip-if(!Android) == 1133905-4-v-rtl.html 1133905-ref-v-rtl.html
+skip-if(!Android) fails-if(Android) == 1133905-5-v-rtl.html 1133905-ref-v-rtl.html
+skip-if(!Android) fails-if(Android) == 1133905-6-v-rtl.html 1133905-ref-v-rtl.html
+skip-if(!Android) == 1133905-1-h-rtl.html 1133905-ref-h-rtl.html
+skip-if(!Android) == 1133905-2-h-rtl.html 1133905-ref-h-rtl.html
+skip-if(!Android) == 1133905-3-h-rtl.html 1133905-ref-h-rtl.html
+skip-if(!Android) == 1133905-4-h-rtl.html 1133905-ref-h-rtl.html
+skip-if(!Android) == 1133905-5-h-rtl.html 1133905-ref-h-rtl.html
+skip-if(!Android) == 1133905-6-h-rtl.html 1133905-ref-h-rtl.html
+skip-if(!Android) fails-if(Android) == 1133905-1-vh-rtl.html 1133905-ref-vh-rtl.html
+skip-if(!Android) fails-if(Android) == 1133905-2-vh-rtl.html 1133905-ref-vh-rtl.html
+skip-if(!Android) fails-if(Android) == 1133905-3-vh-rtl.html 1133905-ref-vh-rtl.html
+skip-if(!Android) == 1133905-4-vh-rtl.html 1133905-ref-vh-rtl.html
+skip-if(!Android) fails-if(Android) == 1133905-5-vh-rtl.html 1133905-ref-vh-rtl.html
+skip-if(!Android) fails-if(Android) == 1133905-6-vh-rtl.html 1133905-ref-vh-rtl.html
 == 1150021-1.xul 1150021-1-ref.xul
 == 1151145-1.html 1151145-1-ref.html
 == 1151306-1.html 1151306-1-ref.html
@@ -1931,7 +1934,7 @@ skip-if(!B2G) fuzzy-if(B2G,102,877) == 1133905-6-vh-rtl.html 1133905-ref-vh-rtl.
 == 1156129-1.html 1156129-1-ref.html
 pref(dom.use_xbl_scopes_for_remote_xul,true) HTTP(..) == 1157127-1.html 1157127-1-ref.html
 fuzzy-if(Android,2,5) == 1169331-1.html 1169331-1-ref.html
-fuzzy(1,74) fuzzy-if(gtkWidget,6,79) == 1174332-1.html 1174332-1-ref.html
+fuzzy(1,74) fails-if(gtkWidget) == 1174332-1.html 1174332-1-ref.html # bug 1312658
 == 1179078-1.html 1179078-1-ref.html
 == 1179288-1.html 1179288-1-ref.html
 == 1190635-1.html 1190635-1-ref.html
@@ -1970,6 +1973,12 @@ fuzzy(8,1900) == 1291528.html 1291528-ref.html
 # should be same.  |fuzzy()| here allows the difference in border, but not
 # background color.
 fuzzy(255,1000) skip-if(!cocoaWidget) == 1294102-1.html 1294102-1-ref.html
+fuzzy(2,320000) == 1315113-1.html 1315113-1-ref.html
+fuzzy(2,20000) == 1315113-2.html 1315113-2-ref.html
+== 1315632-1.html 1315632-1-ref.html
+fuzzy(2,40000) == 1316719-1a.html 1316719-1-ref.html
+fuzzy(2,40000) == 1316719-1b.html 1316719-1-ref.html
+fuzzy(2,40000) == 1316719-1c.html 1316719-1-ref.html
 
 HTTP == 652991-1a.html 652991-1-ref.html
 HTTP == 652991-1b.html 652991-1-ref.html

@@ -214,7 +214,7 @@ PersistentBufferProviderShared::SetForwarder(ShadowLayerForwarder* aFwd)
 }
 
 TextureClient*
-PersistentBufferProviderShared::GetTexture(Maybe<uint32_t> aIndex)
+PersistentBufferProviderShared::GetTexture(const Maybe<uint32_t>& aIndex)
 {
   if (aIndex.isNothing() || !CheckIndex(aIndex.value())) {
     return nullptr;
@@ -430,8 +430,8 @@ PersistentBufferProviderShared::Destroy()
   mSnapshot = nullptr;
   mDrawTarget = nullptr;
 
-  for (uint32_t i = 0; i < mTextures.length(); ++i) {
-    TextureClient* texture = mTextures[i];
+  for (auto& mTexture : mTextures) {
+    TextureClient* texture = mTexture;
     if (texture && texture->IsLocked()) {
       MOZ_ASSERT(false);
       texture->Unlock();

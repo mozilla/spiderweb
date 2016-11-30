@@ -73,7 +73,6 @@ RasterImage::RasterImage(ImageURL* aURI /* = nullptr */) :
   mSize(0,0),
   mLockCount(0),
   mDecodeCount(0),
-  mRequestedSampleSize(0),
   mImageProducerID(ImageContainer::AllocateProducerID()),
   mLastFrameID(0),
   mLastImageContainerDrawResult(DrawResult::NOT_READY),
@@ -588,8 +587,8 @@ RasterImage::GetImageContainer(LayerManager* aManager, uint32_t aFlags)
     return nullptr;
   }
 
-  if (IsUnlocked() && mProgressTracker) {
-    mProgressTracker->OnUnlockedDraw();
+  if (IsUnlocked()) {
+    SendOnUnlockedDraw(aFlags);
   }
 
   RefPtr<layers::ImageContainer> container = mImageContainer.get();
@@ -948,12 +947,9 @@ RasterImage::OnImageDataAvailable(nsIRequest*,
                                   uint32_t aCount)
 {
   nsresult rv = mSourceBuffer->AppendFromInputStream(aInputStream, aCount);
-  MOZ_ASSERT(rv == NS_OK || rv == NS_ERROR_OUT_OF_MEMORY);
-
-  if (MOZ_UNLIKELY(rv == NS_ERROR_OUT_OF_MEMORY)) {
+  if (NS_FAILED(rv)) {
     DoError();
   }
-
   return rv;
 }
 
@@ -1167,8 +1163,7 @@ RasterImage::Decode(const IntSize& aSize,
   } else {
     task = DecoderFactory::CreateDecoder(mDecoderType, WrapNotNull(this),
                                          mSourceBuffer, mSize, aSize,
-                                         decoderFlags, surfaceFlags,
-                                         mRequestedSampleSize);
+                                         decoderFlags, surfaceFlags);
   }
 
   // Make sure DecoderFactory was able to create a decoder successfully.
@@ -1195,7 +1190,7 @@ RasterImage::DecodeMetadata(uint32_t aFlags)
   // Create a decoder.
   RefPtr<IDecodingTask> task =
     DecoderFactory::CreateMetadataDecoder(mDecoderType, WrapNotNull(this),
-                                          mSourceBuffer, mRequestedSampleSize);
+                                          mSourceBuffer);
 
   // Make sure DecoderFactory was able to create a decoder successfully.
   if (!task) {
@@ -1348,9 +1343,10 @@ RasterImage::Draw(gfxContext* aContext,
     return DrawResult::BAD_ARGS;
   }
 
-  if (IsUnlocked() && mProgressTracker) {
-    mProgressTracker->OnUnlockedDraw();
+  if (IsUnlocked()) {
+    SendOnUnlockedDraw(aFlags);
   }
+
 
   // If we're not using SamplingFilter::GOOD, we shouldn't high-quality scale or
   // downscale during decode.
@@ -1583,7 +1579,7 @@ RasterImage::NotifyDecodeComplete(const DecoderFinalStatus& aStatus,
   MOZ_ASSERT(NS_IsMainThread());
 
   // If the decoder detected an error, log it to the error console.
-  if (aStatus.mShouldReportError && !aStatus.mWasAborted) {
+  if (aStatus.mShouldReportError) {
     ReportDecoderError();
   }
 
@@ -1601,7 +1597,7 @@ RasterImage::NotifyDecodeComplete(const DecoderFinalStatus& aStatus,
   MOZ_ASSERT(mError || mHasSize || !aMetadata.HasSize(),
              "SetMetadata should've gotten a size");
 
-  if (!aStatus.mWasMetadataDecode && aStatus.mFinished && !aStatus.mWasAborted) {
+  if (!aStatus.mWasMetadataDecode && aStatus.mFinished) {
     // Flag that we've been decoded before.
     mHasBeenDecoded = true;
   }
@@ -1617,13 +1613,13 @@ RasterImage::NotifyDecodeComplete(const DecoderFinalStatus& aStatus,
     mAnimationState->SetDoneDecoding(true);
   }
 
-  if (!aStatus.mWasMetadataDecode && aTelemetry.mChunkCount) {
-    Telemetry::Accumulate(Telemetry::IMAGE_DECODE_CHUNKS, aTelemetry.mChunkCount);
-  }
+  // Do some telemetry if this isn't a metadata decode.
+  if (!aStatus.mWasMetadataDecode) {
+    if (aTelemetry.mChunkCount) {
+      Telemetry::Accumulate(Telemetry::IMAGE_DECODE_CHUNKS, aTelemetry.mChunkCount);
+    }
 
-  if (aStatus.mFinished) {
-    // Do some telemetry if this isn't a metadata decode.
-    if (!aStatus.mWasMetadataDecode) {
+    if (aStatus.mFinished) {
       Telemetry::Accumulate(Telemetry::IMAGE_DECODE_TIME,
                             int32_t(aTelemetry.mDecodeTime.ToMicroseconds()));
 
@@ -1631,26 +1627,30 @@ RasterImage::NotifyDecodeComplete(const DecoderFinalStatus& aStatus,
         Telemetry::Accumulate(*aTelemetry.mSpeedHistogram, aTelemetry.Speed());
       }
     }
+  }
 
-    // Detect errors.
-    if (aStatus.mHadError && !aStatus.mWasAborted) {
-      DoError();
-    } else if (aStatus.mWasMetadataDecode && !mHasSize) {
-      DoError();
-    }
+  // Only act on errors if we have no usable frames from the decoder.
+  if (aStatus.mHadError &&
+      (!mAnimationState || mAnimationState->KnownFrameCount() == 0)) {
+    DoError();
+  } else if (aStatus.mWasMetadataDecode && !mHasSize) {
+    DoError();
+  }
 
+  // XXX(aosmond): Can we get this far without mFinished == true?
+  if (aStatus.mFinished && aStatus.mWasMetadataDecode) {
     // If we were waiting to fire the load event, go ahead and fire it now.
-    if (mLoadProgress && aStatus.mWasMetadataDecode) {
+    if (mLoadProgress) {
       NotifyForLoadEvent(*mLoadProgress);
       mLoadProgress = Nothing();
       NotifyProgress(FLAG_ONLOAD_UNBLOCKED);
     }
-  }
 
-  // If we were a metadata decode and a full decode was requested, do it.
-  if (aStatus.mFinished && aStatus.mWasMetadataDecode && mWantFullDecode) {
-    mWantFullDecode = false;
-    RequestDecodeForSize(mSize, DECODE_FLAGS_DEFAULT);
+    // If we were a metadata decode and a full decode was requested, do it.
+    if (mWantFullDecode) {
+      mWantFullDecode = false;
+      RequestDecodeForSize(mSize, DECODE_FLAGS_DEFAULT);
+    }
   }
 }
 

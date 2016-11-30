@@ -41,6 +41,9 @@ test_description_schema = Schema({
     # the test-name
     Optional('unittest-try-name'): basestring,
 
+    # the name by which this talos test is addressed in try syntax
+    Optional('talos-try-name'): basestring,
+
     # the symbol, or group(symbol), under which this task should appear in
     # treeherder.
     'treeherder-symbol': basestring,
@@ -106,8 +109,9 @@ test_description_schema = Schema({
     # test platform.
     Optional('worker-implementation'): Any(
         'docker-worker',
-        # coming soon:
+        'macosx-engine',
         'generic-worker',
+        # coming soon:
         'docker-engine',
         'buildbot-bridge',
     ),
@@ -168,6 +172,9 @@ test_description_schema = Schema({
         # buildbot config file, so tell it not to do so in TaskCluster
         Required('no-read-buildbot-config', default=False): bool,
 
+        # Add --blob-upload-branch=<project> mozharness parameter
+        Optional('include-blob-upload-branch'): bool,
+
         # The setting for --download-symbols (if omitted, the option will not
         # be passed to mozharness)
         Optional('download-symbols'): Any(True, 'ondemand'),
@@ -199,6 +206,14 @@ test_description_schema = Schema({
     # The current chunk; this is filled in by `all_kinds.py`
     Optional('this-chunk'): int,
 
+    # os user groups for test task workers; required scopes, will be
+    # added automatically
+    Optional('os-groups', default=[]): Any(
+        [basestring],
+        # todo: create a dedicated elevated worker group and name here
+        {'by-test-platform': {basestring: [basestring]}},
+    ),
+
     # -- values supplied by the task-generation infrastructure
 
     # the platform of the build this task is testing
@@ -212,6 +227,9 @@ test_description_schema = Schema({
 
     # the name of the test (the key in tests.yml)
     'test-name': basestring,
+
+    # the product name, defaults to firefox
+    Optional('product'): basestring,
 
 }, required=True)
 

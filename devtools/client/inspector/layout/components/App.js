@@ -4,18 +4,41 @@
 
 "use strict";
 
-const { createClass, DOM: dom } = require("devtools/client/shared/vendor/react");
+const { addons, createClass, createFactory, DOM: dom, PropTypes } =
+  require("devtools/client/shared/vendor/react");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 
-let App = createClass({
+const Accordion = createFactory(require("./Accordion"));
+const Grid = createFactory(require("./Grid"));
+
+const Types = require("../types");
+const { getStr } = require("../utils/l10n");
+
+const App = createClass({
 
   displayName: "App",
+
+  propTypes: {
+    grids: PropTypes.arrayOf(PropTypes.shape(Types.grid)).isRequired,
+  },
+
+  mixins: [ addons.PureRenderMixin ],
 
   render() {
     return dom.div(
       {
-        id: "app",
-      }
+        id: "layout-container",
+      },
+      Accordion({
+        items: [
+          {
+            header: getStr("layout.header"),
+            component: Grid,
+            componentProps: this.props,
+            opened: true
+          }
+        ]
+      })
     );
   },
 

@@ -61,7 +61,8 @@
           "author": {
             "type": "string",
             "optional": true,
-            "preprocess": "localize"
+            "preprocess": "localize",
+            "onError": "warn"
           },
 
           "version": {
@@ -120,6 +121,12 @@
               }
             ],
             "optional": true
+          },
+
+          "node": {
+            "type": "string",
+            "optional": true,
+            "format": "strictRelativeUrl"
           },
 
           "options_ui": {
@@ -212,6 +219,7 @@
               "alarms",
               "clipboardWrite",
               "idle",
+              "node",
               "notifications",
               "storage"
             ]
@@ -348,18 +356,18 @@
           {
             "type": "object",
             "patternProperties": {
-              "^[1-9]\\d*$": {
-                "type": "object",
-                "isInstanceOf": "ImageData"
-              }
+              "^[1-9]\\d*$": { "$ref": "ImageData" }
             },
             "additionalProperties": false
           },
-          {
-            "type": "object",
-            "isInstanceOf": "ImageData"
-          }
+          { "$ref": "ImageData" }
         ]
+      },
+      {
+        "id": "ImageData",
+        "type": "object",
+        "isInstanceOf": "ImageData",
+        "postprocess": "convertImageDataToURL"
       },
       {
         "id": "UnrecognizedProperty",

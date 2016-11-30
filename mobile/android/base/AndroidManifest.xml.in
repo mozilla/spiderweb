@@ -42,6 +42,8 @@
 #ifdef MOZ_NATIVE_DEVICES
         <!-- This resources comes from Google Play Services. Required for casting support. -->
         <meta-data android:name="com.google.android.gms.version" android:value="@integer/google_play_services_version" />
+        <service android:name="org.mozilla.gecko.RemotePresentationService" android:exported="false"/>
+
 #endif
 
         <!-- This activity handles all incoming Intents and dispatches them to other activities. -->
@@ -393,6 +395,14 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name="org.mozilla.gecko.PackageReplacedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"></action>
+            </intent-filter>
+        </receiver>
+
         <service
           android:name="org.mozilla.gecko.telemetry.TelemetryUploadService"
           android:exported="false"/>
@@ -430,6 +440,23 @@
             android:enabled="true"
             android:exported="false"
             android:process=":media"
+            android:isolatedProcess="false">
+        </service>
+
+        <!-- New child services must also be added to the GeckoView AndroidManifest.xml -->
+        <service
+            android:name="org.mozilla.gecko.process.GeckoServiceChildProcess$geckomediaplugin"
+            android:enabled="true"
+            android:exported="false"
+            android:process=":geckomediaplugin"
+            android:isolatedProcess="false">
+        </service>
+
+        <service
+            android:name="org.mozilla.gecko.process.GeckoServiceChildProcess$tab"
+            android:enabled="true"
+            android:exported="false"
+            android:process=":tab"
             android:isolatedProcess="false">
         </service>
 

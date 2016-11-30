@@ -152,14 +152,6 @@ public:
     MOZ_CRASH();
   }
 
-  // By default, the reader return the decoded data. Some readers support
-  // retuning demuxed data.
-  virtual bool IsDemuxOnlySupported() const { return false; }
-
-  // Configure the reader to return demuxed or decoded data
-  // upon calls to Request{Audio,Video}Data.
-  virtual void SetDemuxOnly(bool /*aDemuxedOnly*/) {}
-
   // The default implementation of AsyncReadMetadata is implemented in terms of
   // synchronous ReadMetadata() calls. Implementations may also
   // override AsyncReadMetadata to create a more proper async implementation.
@@ -287,22 +279,6 @@ public:
   MediaEventProducer<void>& MediaNotSeekableProducer()
   {
     return mOnMediaNotSeekable;
-  }
-
-  bool IsSuspended() const
-  {
-    MOZ_ASSERT(OnTaskQueue());
-    return mIsSuspended;
-  }
-
-  void SetIsSuspended(bool aState)
-  {
-    MOZ_ASSERT(OnTaskQueue());
-    mIsSuspended = aState;
-  }
-
-  AbstractCanonical<bool>* CanonicalIsSuspended() {
-    return &mIsSuspended;
   }
 
   // Switch the video decoder to BlankDecoderModule. It might takes effective
@@ -450,8 +426,6 @@ private:
   // of Request{Audio,Video}Data.
   MozPromiseHolder<MediaDataPromise> mBaseAudioPromise;
   MozPromiseHolder<MediaDataPromise> mBaseVideoPromise;
-
-  Canonical<bool> mIsSuspended;
 
   MediaEventListener mDataArrivedListener;
 };

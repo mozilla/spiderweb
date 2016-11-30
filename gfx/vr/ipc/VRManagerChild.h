@@ -17,6 +17,7 @@
 
 namespace mozilla {
 namespace dom {
+class GamepadManager;
 class Navigator;
 class VRDisplay;
 class VREventObserver;
@@ -77,13 +78,16 @@ public:
     int32_t *aHandle);
   void CancelFrameRequestCallback(int32_t aHandle);
   void RunFrameRequestCallbacks();
+  // GamepadManager has to be set by the content side to make sure we are using
+  // the same singleton GamepadManager from the same process.
+  void SetGamepadManager(dom::GamepadManager* aGamepadManager);
 
   void UpdateDisplayInfo(nsTArray<VRDisplayInfo>& aDisplayUpdates);
   void FireDOMVRDisplayConnectEvent();
   void FireDOMVRDisplayDisconnectEvent();
   void FireDOMVRDisplayPresentChangeEvent();
 
-  virtual void FatalError(const char* const aName, const char* const aMsg) const override;
+  virtual void HandleFatalError(const char* aName, const char* aMsg) const override;
 
 protected:
   explicit VRManagerChild();
@@ -108,13 +112,13 @@ protected:
                                             const float& aRightEyeHeight) override;
   virtual bool DeallocPVRLayerChild(PVRLayerChild* actor) override;
 
-  virtual bool RecvUpdateDisplayInfo(nsTArray<VRDisplayInfo>&& aDisplayUpdates) override;
+  virtual mozilla::ipc::IPCResult RecvUpdateDisplayInfo(nsTArray<VRDisplayInfo>&& aDisplayUpdates) override;
 
-  virtual bool RecvParentAsyncMessages(InfallibleTArray<AsyncParentMessageData>&& aMessages) override;
+  virtual mozilla::ipc::IPCResult RecvParentAsyncMessages(InfallibleTArray<AsyncParentMessageData>&& aMessages) override;
 
-  virtual bool RecvNotifyVSync() override;
-  virtual bool RecvNotifyVRVSync(const uint32_t& aDisplayID) override;
-
+  virtual mozilla::ipc::IPCResult RecvNotifyVSync() override;
+  virtual mozilla::ipc::IPCResult RecvNotifyVRVSync(const uint32_t& aDisplayID) override;
+  virtual mozilla::ipc::IPCResult RecvGamepadUpdate(const GamepadChangeEvent& aGamepadEvent) override;
 
   // ShmemAllocator
 
@@ -126,7 +130,7 @@ protected:
                                 ipc::SharedMemory::SharedMemoryType aType,
                                 ipc::Shmem* aShmem) override;
 
-  virtual void DeallocShmem(ipc::Shmem& aShmem) override;
+  virtual bool DeallocShmem(ipc::Shmem& aShmem) override;
 
   virtual bool IsSameProcess() const override
   {
@@ -140,8 +144,6 @@ private:
   void FireDOMVRDisplayConnectEventInternal();
   void FireDOMVRDisplayDisconnectEventInternal();
   void FireDOMVRDisplayPresentChangeEventInternal();
-
-  void DeliverFence(uint64_t aTextureId, FenceHandle& aReleaseFenceHandle);
   /**
   * Notify id of Texture When host side end its use. Transaction id is used to
   * make sure if there is no newer usage.
@@ -151,6 +153,7 @@ private:
   nsTArray<RefPtr<VRDisplayClient> > mDisplays;
   bool mDisplaysInitialized;
   nsTArray<dom::Navigator*> mNavigatorCallbacks;
+  dom::GamepadManager* mGamepadManager;
 
   int32_t mInputFrameID;
 

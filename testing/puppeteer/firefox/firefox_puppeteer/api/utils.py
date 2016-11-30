@@ -11,9 +11,9 @@ class Utils(BaseLib):
     """Low-level access to utility actions."""
 
     def __init__(self, *args, **kwargs):
-        BaseLib.__init__(self, *args, **kwargs)
+        super(Utils, self).__init__(*args, **kwargs)
 
-        self._permissions = Permissions(lambda: self.marionette)
+        self._permissions = Permissions(self.marionette)
 
     @property
     def permissions(self):

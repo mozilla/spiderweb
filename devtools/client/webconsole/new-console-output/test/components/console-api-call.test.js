@@ -42,6 +42,30 @@ describe("ConsoleAPICall component:", () => {
       expect(locationLink.text()).toBe("test-tempfile.js:1:27");
     });
 
+    it("renders string grips with custom style", () => {
+      const message = stubPreparedMessages.get("console.log(%cfoobar)");
+      const wrapper = render(ConsoleApiCall({ message, serviceContainer }));
+
+      const elements = wrapper.find(".objectBox-string");
+      expect(elements.text()).toBe("foobar");
+      expect(elements.length).toBe(2);
+
+      const firstElementStyle = elements.eq(0).prop("style");
+      // Allowed styles are applied accordingly on the first element.
+      expect(firstElementStyle.color).toBe(`blue`);
+      expect(firstElementStyle["font-size"]).toBe(`1.3em`);
+      // Forbidden styles are not applied.
+      expect(firstElementStyle["background-image"]).toBe(undefined);
+      expect(firstElementStyle.position).toBe(undefined);
+      expect(firstElementStyle.top).toBe(undefined);
+
+      const secondElementStyle = elements.eq(1).prop("style");
+      // Allowed styles are applied accordingly on the second element.
+      expect(secondElementStyle.color).toBe(`red`);
+      // Forbidden styles are not applied.
+      expect(secondElementStyle.background).toBe(undefined);
+    });
+
     it("renders repeat node", () => {
       const message =
         stubPreparedMessages.get("console.log('foobar', 'test')")
@@ -64,6 +88,15 @@ describe("ConsoleAPICall component:", () => {
 
       wrapper = render(ConsoleApiCall({ message, serviceContainer}));
       expect(wrapper.find(".indent").prop("style").width).toBe(`0`);
+    });
+
+    it("renders a timestamp", () => {
+      const message = stubPreparedMessages.get("console.log('foobar', 'test')");
+      const wrapper = render(ConsoleApiCall({ message, serviceContainer }));
+      const L10n = require("devtools/client/webconsole/new-console-output/test/fixtures/L10n");
+      const { timestampString } = new L10n();
+
+      expect(wrapper.find(".timestamp").text()).toBe(timestampString(message.timeStamp));
     });
   });
 
@@ -123,6 +156,9 @@ describe("ConsoleAPICall component:", () => {
 
       expect(frameLinks.eq(2).find(".frame-link-function-display-name").text()).toBe("triggerPacket");
       expect(frameLinks.eq(2).find(".frame-link-filename").text()).toBe(filepath);
+
+      //it should not be collapsible.
+      expect(wrapper.find(`.theme-twisty`).length).toBe(0);
     });
   });
 

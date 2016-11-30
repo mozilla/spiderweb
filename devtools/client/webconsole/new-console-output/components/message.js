@@ -13,6 +13,7 @@ const {
   DOM: dom,
   PropTypes
 } = require("devtools/client/shared/vendor/react");
+const { l10n } = require("devtools/client/webconsole/new-console-output/utils/messages");
 const actions = require("devtools/client/webconsole/new-console-output/actions/index");
 const CollapseButton = createFactory(require("devtools/client/webconsole/new-console-output/components/collapse-button"));
 const MessageIndent = createFactory(require("devtools/client/webconsole/new-console-output/components/message-indent").MessageIndent);
@@ -40,6 +41,7 @@ const Message = createClass({
     stacktrace: PropTypes.any,
     messageId: PropTypes.string,
     scrollToMessage: PropTypes.bool,
+    exceptionDocURL: PropTypes.string,
     serviceContainer: PropTypes.shape({
       emitNewMessage: PropTypes.func.isRequired,
       onViewSourceInDebugger: PropTypes.func.isRequired,
@@ -66,6 +68,11 @@ const Message = createClass({
     }
   },
 
+  onLearnMoreClick: function () {
+    let {exceptionDocURL} = this.props;
+    this.props.serviceContainer.openLink(exceptionDocURL);
+  },
+
   render() {
     const {
       messageId,
@@ -82,12 +89,18 @@ const Message = createClass({
       stacktrace,
       serviceContainer,
       dispatch,
+      exceptionDocURL,
+      timeStamp = Date.now(),
     } = this.props;
 
     topLevelClasses.push("message", source, type, level);
     if (open) {
       topLevelClasses.push("open");
     }
+
+    const timestampEl = dom.span({
+      className: "timestamp devtools-monospace"
+    }, l10n.timestampString(timeStamp));
 
     const icon = MessageIcon({level});
 
@@ -122,15 +135,23 @@ const Message = createClass({
     const repeat = this.props.repeat ? MessageRepeat({repeat: this.props.repeat}) : null;
 
     // Configure the location.
-    const shouldRenderFrame = frame && frame.source !== "debugger eval code";
     const location = dom.span({ className: "message-location devtools-monospace" },
-      shouldRenderFrame ? FrameView({
+      frame ? FrameView({
         frame,
-        onClick: serviceContainer.onViewSourceInDebugger,
+        onClick: serviceContainer ? serviceContainer.onViewSourceInDebugger : undefined,
         showEmptyPathAsHost: true,
-        sourceMapService: serviceContainer.sourceMapService
+        sourceMapService: serviceContainer ? serviceContainer.sourceMapService : undefined
       }) : null
     );
+
+    let learnMore;
+    if (exceptionDocURL) {
+      learnMore = dom.a({
+        className: "learn-more-link webconsole-learn-more-link",
+        title: exceptionDocURL.split("?")[0],
+        onClick: this.onLearnMoreClick,
+      }, `[${l10n.getStr("webConsoleMoreInfoLabel")}]`);
+    }
 
     return dom.div({
       className: topLevelClasses.join(" "),
@@ -138,14 +159,15 @@ const Message = createClass({
         this.messageNode = node;
       }
     },
-      // @TODO add timestamp
+      timestampEl,
       MessageIndent({indent}),
       icon,
       collapse,
       dom.span({ className: "message-body-wrapper" },
         dom.span({ className: "message-flex-body" },
           dom.span({ className: "message-body devtools-monospace" },
-            messageBody
+            messageBody,
+            learnMore
           ),
           repeat,
           location

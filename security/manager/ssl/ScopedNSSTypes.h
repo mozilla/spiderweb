@@ -59,9 +59,6 @@ MapSECStatus(SECStatus rv)
 
 // Alphabetical order by NSS type
 // Deprecated: use the equivalent UniquePtr templates instead.
-MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedPRFileDesc,
-                                          PRFileDesc,
-                                          PR_Close)
 MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedCERTCertificate,
                                           CERTCertificate,
                                           CERT_DestroyCertificate)
@@ -90,11 +87,6 @@ PK11_DestroyContext_true(PK11Context * ctx) {
 }
 
 } // namespace internal
-
-// Deprecated: use the equivalent UniquePtr templates instead.
-MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedSGNDigestInfo,
-                                          SGNDigestInfo,
-                                          SGN_DestroyDigestInfo)
 
 // Emulates MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE, but for UniquePtrs.
 #define MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(name, Type, Deleter) \
@@ -325,9 +317,6 @@ MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedSECKEYEncryptedPrivateKeyInfo,
 MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedSECKEYPublicKey,
                                           SECKEYPublicKey,
                                           SECKEY_DestroyPublicKey)
-MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedSECAlgorithmID,
-                                          SECAlgorithmID,
-                                          internal::SECOID_DestroyAlgorithmID_true)
 
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueCERTCertificate,
                                       CERTCertificate,
@@ -387,6 +376,9 @@ MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePRFileDesc,
                                       PRFileDesc,
                                       PR_Close)
 
+MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSECAlgorithmID,
+                                      SECAlgorithmID,
+                                      internal::SECOID_DestroyAlgorithmID_true)
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSECItem,
                                       SECItem,
                                       internal::SECITEM_FreeItem_true)
@@ -399,6 +391,10 @@ MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSECKEYPublicKey,
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSECMODModule,
                                       SECMODModule,
                                       SECMOD_DestroyModule)
+
+MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSGNDigestInfo,
+                                      SGNDigestInfo,
+                                      SGN_DestroyDigestInfo)
 
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueVFYContext,
                                       VFYContext,

@@ -9,12 +9,13 @@ from __future__ import absolute_import, print_function, unicode_literals
 import os
 import json
 import logging
+
+import time
 import yaml
 
 from .generator import TaskGraphGenerator
 from .create import create_tasks
 from .parameters import Parameters
-from .target_tasks import get_method
 from .taskgraph import TaskGraph
 
 from taskgraph.util.templates import Templates
@@ -44,6 +45,16 @@ PER_PROJECT_PARAMETERS = {
         'optimize_target_tasks': True,
     },
 
+    'cedar': {
+        'target_tasks_method': 'cedar_tasks',
+        'optimize_target_tasks': True,
+    },
+
+    'graphics': {
+        'target_tasks_method': 'graphics_tasks',
+        'optimize_target_tasks': True,
+    },
+
     # the default parameters are used for projects that do not match above.
     'default': {
         'target_tasks_method': 'default',
@@ -67,12 +78,9 @@ def taskgraph_decision(options):
     parameters = get_decision_parameters(options)
 
     # create a TaskGraphGenerator instance
-    target_tasks_method = parameters.get('target_tasks_method', 'all_tasks')
-    target_tasks_method = get_method(target_tasks_method)
     tgg = TaskGraphGenerator(
         root_dir=options['root'],
-        parameters=parameters,
-        target_tasks_method=target_tasks_method)
+        parameters=parameters)
 
     # write out the parameters used to generate this graph
     write_artifact('parameters.yml', dict(**parameters))
@@ -120,10 +128,23 @@ def get_decision_parameters(options):
         'target_tasks_method',
     ] if n in options}
 
+    # Define default filter list, as most configurations shouldn't need
+    # custom filters.
+    parameters['filters'] = [
+        'check_servo',
+        'target_tasks_method',
+    ]
+
     # owner must be an email, but sometimes (e.g., for ffxbld) it is not, in which
     # case, fake it
     if '@' not in parameters['owner']:
         parameters['owner'] += '@noreply.mozilla.org'
+
+    # use the pushdate as build_date if given, else use current time
+    parameters['build_date'] = parameters['pushdate'] or int(time.time())
+    # moz_build_date is the build identifier based on build_date
+    parameters['moz_build_date'] = time.strftime("%Y%m%d%H%M%S",
+                                                 time.gmtime(parameters['build_date']))
 
     project = parameters['project']
     try:

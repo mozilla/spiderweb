@@ -19,6 +19,7 @@
 #include "nsCOMPtr.h"
 #include "nsIDOMBlob.h"
 #include "nsIFile.h"
+#include "nsIMemoryReporter.h"
 #include "nsIMutable.h"
 #include "nsIXMLHttpRequest.h"
 #include "nsString.h"
@@ -70,6 +71,10 @@ public:
   static already_AddRefed<Blob>
   Create(nsISupports* aParent, const nsAString& aContentType, uint64_t aStart,
          uint64_t aLength);
+
+  static already_AddRefed<Blob>
+  CreateStringBlob(nsISupports* aParent, const nsACString& aData,
+                   const nsAString& aContentType);
 
   // The returned Blob takes ownership of aMemoryBuffer. aMemoryBuffer will be
   // freed by free so it must be allocated by malloc or something
@@ -206,26 +211,19 @@ public:
               const FilePropertyBag& aBag,
               ErrorResult& aRv);
 
-  // File constructor - ChromeOnly
+  // ChromeOnly
   static already_AddRefed<File>
-  Constructor(const GlobalObject& aGlobal,
-              Blob& aData,
-              const ChromeFilePropertyBag& aBag,
-              ErrorResult& aRv);
+  CreateFromFileName(const GlobalObject& aGlobal,
+                     const nsAString& aData,
+                     const ChromeFilePropertyBag& aBag,
+                     ErrorResult& aRv);
 
-  // File constructor - ChromeOnly
+  // ChromeOnly
   static already_AddRefed<File>
-  Constructor(const GlobalObject& aGlobal,
-              const nsAString& aData,
-              const ChromeFilePropertyBag& aBag,
-              ErrorResult& aRv);
-
-  // File constructor - ChromeOnly
-  static already_AddRefed<File>
-  Constructor(const GlobalObject& aGlobal,
-              nsIFile* aData,
-              const ChromeFilePropertyBag& aBag,
-              ErrorResult& aRv);
+  CreateFromNsIFile(const GlobalObject& aGlobal,
+                    nsIFile* aData,
+                    const ChromeFilePropertyBag& aBag,
+                    ErrorResult& aRv);
 
   void GetName(nsAString& aName) const;
 
@@ -520,6 +518,33 @@ protected:
   const uint64_t mSerialNumber;
 };
 
+class BlobImplString final : public BlobImplBase
+                           , public nsIMemoryReporter
+{
+  MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
+
+public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSIMEMORYREPORTER
+
+  static already_AddRefed<BlobImplString>
+  Create(const nsACString& aData, const nsAString& aContentType);
+
+  virtual void GetInternalStream(nsIInputStream** aStream,
+                                 ErrorResult& aRv) override;
+
+  virtual already_AddRefed<BlobImpl>
+  CreateSlice(uint64_t aStart, uint64_t aLength,
+              const nsAString& aContentType, ErrorResult& aRv) override;
+
+private:
+  BlobImplString(const nsACString& aData, const nsAString& aContentType);
+
+  ~BlobImplString();
+
+  nsCString mData;
+};
+
 /**
  * This class may be used off the main thread, and in particular, its
  * constructor and destructor may not run on the same thread.  Be careful!
@@ -798,19 +823,25 @@ private:
 };
 
 class BlobImplStream final : public BlobImplBase
+                           , public nsIMemoryReporter
 {
+  MOZ_DEFINE_MALLOC_SIZE_OF(MallocSizeOf)
+
 public:
   NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSIMEMORYREPORTER
 
-  BlobImplStream(nsIInputStream* aInputStream,
-                 const nsAString& aContentType,
-                 uint64_t aLength);
+  static already_AddRefed<BlobImplStream>
+  Create(nsIInputStream* aInputStream,
+         const nsAString& aContentType,
+         uint64_t aLength);
 
-  BlobImplStream(nsIInputStream* aInputStream,
-                 const nsAString& aName,
-                 const nsAString& aContentType,
-                 int64_t aLastModifiedDate,
-                 uint64_t aLength);
+  static already_AddRefed<BlobImplStream>
+  Create(nsIInputStream* aInputStream,
+         const nsAString& aName,
+         const nsAString& aContentType,
+         int64_t aLastModifiedDate,
+         uint64_t aLength);
 
   virtual void GetInternalStream(nsIInputStream** aStream,
                                  ErrorResult& aRv) override;
@@ -825,12 +856,24 @@ public:
   }
 
 private:
+  BlobImplStream(nsIInputStream* aInputStream,
+                 const nsAString& aContentType,
+                 uint64_t aLength);
+
+  BlobImplStream(nsIInputStream* aInputStream,
+                 const nsAString& aName,
+                 const nsAString& aContentType,
+                 int64_t aLastModifiedDate,
+                 uint64_t aLength);
+
   BlobImplStream(BlobImplStream* aOther,
                  const nsAString& aContentType,
                  uint64_t aStart,
                  uint64_t aLength);
 
   ~BlobImplStream();
+
+  void MaybeRegisterMemoryReporter();
 
   nsCOMPtr<nsIInputStream> mInputStream;
 };

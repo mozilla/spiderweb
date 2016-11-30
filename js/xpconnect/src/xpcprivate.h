@@ -1595,10 +1595,7 @@ public:
     GetContext() const {return mScope->GetContext();}
 
     JSObject*
-    GetJSProtoObject() const {
-        JS::ExposeObjectToActiveJS(mJSProtoObject);
-        return mJSProtoObject;
-    }
+    GetJSProtoObject() const { return mJSProtoObject; }
 
     nsIClassInfo*
     GetClassInfo()     const {return mClassInfo;}
@@ -2378,12 +2375,6 @@ public:
                                         const char* ifaceName,
                                         const char* methodName,
                                         nsIException** exception);
-
-    static nsresult JSErrorToXPCException(const char* message,
-                                          const char* ifaceName,
-                                          const char* methodName,
-                                          const JSErrorReport* report,
-                                          nsIException** exception);
 
     static nsresult ConstructException(nsresult rv, const char* message,
                                        const char* ifaceName,

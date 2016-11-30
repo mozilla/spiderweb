@@ -1123,6 +1123,12 @@ SyncEngine.prototype = {
         return;
       }
 
+      if (self._shouldDeleteRemotely(item)) {
+        self._log.trace("Deleting item from server without applying", item);
+        self._deleteId(item.id);
+        return;
+      }
+
       let shouldApply;
       try {
         shouldApply = self._reconcile(item);
@@ -1158,7 +1164,7 @@ SyncEngine.prototype = {
 
     // Only bother getting data from the server if there's new things
     if (this.lastModified == null || this.lastModified > this.lastSync) {
-      let resp = newitems.get();
+      let resp = newitems.getBatched();
       doApplyBatchAndPersistFailed.call(this);
       if (!resp.success) {
         resp.failureCode = ENGINE_DOWNLOAD_FAIL;
@@ -1260,6 +1266,13 @@ SyncEngine.prototype = {
     Observers.notify("weave:engine:sync:applied", count, this.name);
   },
 
+  // Indicates whether an incoming item should be deleted from the server at
+  // the end of the sync. Engines can override this method to clean up records
+  // that shouldn't be on the server.
+  _shouldDeleteRemotely(remoteItem) {
+    return false;
+  },
+
   _noteApplyFailure: function () {
     // here would be a good place to record telemetry...
   },
@@ -1278,10 +1291,23 @@ SyncEngine.prototype = {
     // By default, assume there's no dupe items for the engine
   },
 
+  // Called when the server has a record marked as deleted, but locally we've
+  // changed it more recently than the deletion. If we return false, the
+  // record will be deleted locally. If we return true, we'll reupload the
+  // record to the server -- any extra work that's needed as part of this
+  // process should be done at this point (such as mark the record's parent
+  // for reuploading in the case of bookmarks).
+  _shouldReviveRemotelyDeletedRecord(remoteItem) {
+    return true;
+  },
+
   _deleteId: function (id) {
     this._tracker.removeChangedID(id);
+    this._noteDeletedId(id);
+  },
 
-    // Remember this id to delete at the end of sync
+  // Marks an ID for deletion at the end of the sync.
+  _noteDeletedId(id) {
     if (this._delete.ids == null)
       this._delete.ids = [id];
     else
@@ -1353,15 +1379,18 @@ SyncEngine.prototype = {
                         "exists and isn't modified.");
         return true;
       }
+      this._log.trace("Incoming record is deleted but we had local changes.");
 
-      // TODO As part of bug 720592, determine whether we should do more here.
-      // In the case where the local changes are newer, it is quite possible
-      // that the local client will restore data a remote client had tried to
-      // delete. There might be a good reason for that delete and it might be
-      // enexpected for this client to restore that data.
-      this._log.trace("Incoming record is deleted but we had local changes. " +
-                      "Applying the youngest record.");
-      return remoteIsNewer;
+      if (remoteIsNewer) {
+        this._log.trace("Remote record is newer -- deleting local record.");
+        return true;
+      }
+      // If the local record is newer, we defer to individual engines for
+      // how to handle this. By default, we revive the record.
+      let willRevive = this._shouldReviveRemotelyDeletedRecord(item);
+      this._log.trace("Local record is newer -- reviving? " + willRevive);
+
+      return !willRevive;
     }
 
     // At this point the incoming record is not for a deletion and must have
@@ -1557,6 +1586,8 @@ SyncEngine.prototype = {
             if (!this.allowSkippedRecord) {
               throw error;
             }
+            this._modified.delete(id);
+            this._log.warn(`Failed to enqueue record "${id}" (skipping)`, error);
           }
         }
         this._store._sleep(0);
@@ -1605,9 +1636,12 @@ SyncEngine.prototype = {
       return;
     }
 
-    // Mark failed WBOs as changed again so they are reuploaded next time.
-    this.trackRemainingChanges();
-    this._modified.clear();
+    try {
+      // Mark failed WBOs as changed again so they are reuploaded next time.
+      this.trackRemainingChanges();
+    } finally {
+      this._modified.clear();
+    }
   },
 
   _sync: function () {
@@ -1757,6 +1791,11 @@ class Changeset {
   // Adds a change for a tracked ID to the changeset.
   set(id, change) {
     this.changes[id] = change;
+  }
+
+  // Adds multiple entries to the changeset.
+  insert(changes) {
+    Object.assign(this.changes, changes);
   }
 
   // Indicates whether an entry is in the changeset.

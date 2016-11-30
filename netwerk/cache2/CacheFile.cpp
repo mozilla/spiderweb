@@ -1231,6 +1231,17 @@ CacheFile::GetFetchCount(uint32_t *_retval)
 }
 
 nsresult
+CacheFile::GetDiskStorageSizeInKB(uint32_t *aDiskStorageSize)
+{
+  if (!mHandle) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  *aDiskStorageSize = mHandle->FileSizeInK();
+  return NS_OK;
+}
+
+nsresult
 CacheFile::OnFetched()
 {
   CacheFileAutoLock lock(this);
@@ -2300,12 +2311,9 @@ CacheFile::InitIndexEntry()
 
   nsresult rv;
 
-  // Bug 1201042 - will pass OriginAttributes directly.
-  rv = CacheFileIOManager::InitIndexEntry(mHandle,
-                                          mMetadata->OriginAttributes().mAppId,
-                                          mMetadata->IsAnonymous(),
-                                          mMetadata->OriginAttributes().mInIsolatedMozBrowser,
-                                          mPinned);
+  rv = CacheFileIOManager::InitIndexEntry(
+         mHandle, GetOriginAttrsHash(mMetadata->OriginAttributes()),
+         mMetadata->IsAnonymous(), mPinned);
   NS_ENSURE_SUCCESS(rv, rv);
 
   uint32_t expTime;

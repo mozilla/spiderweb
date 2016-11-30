@@ -181,6 +181,13 @@ public class BrowserContract {
         public static final String IS_LOCAL = "is_local";
     }
 
+    public interface PageMetadataColumns {
+        public static final String HISTORY_GUID = "history_guid";
+        public static final String DATE_CREATED = "created";
+        public static final String HAS_IMAGE = "has_image";
+        public static final String JSON = "json";
+    }
+
     public interface DeletedColumns {
         public static final String ID = "id";
         public static final String GUID = "guid";
@@ -424,7 +431,7 @@ public class BrowserContract {
 
     public static final class Clients implements CommonColumns {
         private Clients() {}
-        public static final Uri CONTENT_RECENCY_URI = Uri.withAppendedPath(TABS_AUTHORITY_URI, "clients_recency");
+        public static final Uri CONTENT_NO_STALE_SORTED_URI = Uri.withAppendedPath(TABS_AUTHORITY_URI, "clients_no_stale_sorted");
         public static final Uri CONTENT_URI = Uri.withAppendedPath(TABS_AUTHORITY_URI, "clients");
         public static final String CONTENT_TYPE = "vnd.android.cursor.dir/client";
         public static final String CONTENT_ITEM_TYPE = "vnd.android.cursor.item/client";
@@ -759,6 +766,14 @@ public class BrowserContract {
         public static final String TABLE_DISABLED_HOSTS = "logins_disabled_hosts";
 
         public static final String HOSTNAME = "hostname";
+    }
+
+    @RobocopTarget
+    public static final class PageMetadata implements CommonColumns, PageMetadataColumns {
+        private PageMetadata() {}
+
+        public static final String TABLE_NAME = "page_metadata";
+        public static final Uri CONTENT_URI = Uri.withAppendedPath(AUTHORITY_URI, "page_metadata");
     }
 
     // We refer to the service by name to decouple services from the rest of the code base.

@@ -7,8 +7,13 @@ registerCleanupFunction(function() {
 });
 
 function promiseReloadFrame(aFrameId) {
-  return ContentTask.spawn(gBrowser.selectedBrowser, aFrameId, function*(aFrameId) {
-    content.wrappedJSObject.document.getElementById(aFrameId).contentWindow.location.reload();
+  return ContentTask.spawn(gBrowser.selectedBrowser, aFrameId, function*(contentFrameId) {
+    content.wrappedJSObject
+           .document
+           .getElementById(contentFrameId)
+           .contentWindow
+           .location
+           .reload();
   });
 }
 
@@ -110,9 +115,6 @@ var gTests = [
     yield promiseReloadFrame("frame1");
     yield promise;
 
-    if ((yield promiseTodoObserverNotCalled("recording-device-events")) == 1) {
-      todo(false, "Got the 'recording-device-events' notification twice, likely because of bug 962719");
-    }
     yield expectObserverCalled("recording-window-ended");
     yield expectNoObserverCalled();
     yield checkNotSharing();
@@ -188,9 +190,6 @@ var gTests = [
 
     yield expectObserverCalled("recording-window-ended");
     yield checkSharingUI({video: false, audio: true});
-    if ((yield promiseTodoObserverNotCalled("recording-device-events")) == 1) {
-      todo(false, "Got the 'recording-device-events' notification twice, likely because of bug 962719");
-    }
     yield expectNoObserverCalled();
 
     yield closeStream(false, "frame1");
@@ -225,9 +224,6 @@ var gTests = [
     content.location.reload();
     yield promise;
 
-    if ((yield promiseTodoObserverNotCalled("recording-device-events")) == 1) {
-      todo(false, "Got the 'recording-device-events' notification twice, likely because of bug 962719");
-    }
     yield expectObserverCalled("recording-window-ended");
     yield expectNoObserverCalled();
     yield checkNotSharing();
@@ -254,9 +250,9 @@ function test() {
     Task.spawn(function* () {
       yield SpecialPowers.pushPrefEnv({"set": [[PREF_PERMISSION_FAKE, true]]});
 
-      for (let test of gTests) {
-        info(test.desc);
-        yield test.run();
+      for (let testCase of gTests) {
+        info(testCase.desc);
+        yield testCase.run();
 
         // Cleanup before the next test
         yield expectNoObserverCalled();

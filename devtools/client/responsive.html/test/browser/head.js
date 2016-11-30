@@ -31,6 +31,7 @@ Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/devtools/client/inspector/test/shared-head.js",
   this);
 
+const E10S_MULTI_ENABLED = Services.prefs.getIntPref("dom.ipc.processCount") > 1;
 const TEST_URI_ROOT = "http://example.com/browser/devtools/client/responsive.html/test/browser/";
 const OPEN_DEVICE_MODAL_VALUE = "OPEN_DEVICE_MODAL";
 
@@ -41,6 +42,11 @@ const { addDevice, removeDevice } = require("devtools/client/shared/devices");
 
 SimpleTest.requestCompleteLog();
 SimpleTest.waitForExplicitFinish();
+
+// Toggling the RDM UI involves several docShell swap operations, which are somewhat slow
+// on debug builds. Usually we are just barely over the limit, so a blanket factor of 2
+// should be enough.
+requestLongerTimeout(2);
 
 flags.testing = true;
 Services.prefs.clearUserPref("devtools.responsive.html.displayedDeviceList");
@@ -197,9 +203,11 @@ function* testViewportResize(ui, selector, moveBy,
                              expectedViewportSize, expectedHandleMove) {
   let win = ui.toolWindow;
 
+  let changed = once(ui, "viewport-device-changed");
   let resized = waitForViewportResizeTo(ui, ...expectedViewportSize);
   let startRect = dragElementBy(selector, ...moveBy, win);
   yield resized;
+  yield changed;
 
   let endRect = getElRect(selector, win);
   is(endRect.left - startRect.left, expectedHandleMove[0],
@@ -208,31 +216,34 @@ function* testViewportResize(ui, selector, moveBy,
     `The y move of ${selector} is as expected`);
 }
 
-function openDeviceModal(ui) {
-  let { document } = ui.toolWindow;
+function openDeviceModal({toolWindow}) {
+  let { document } = toolWindow;
   let select = document.querySelector(".viewport-device-selector");
   let modal = document.querySelector("#device-modal-wrapper");
-  let editDeviceOption = [...select.options].filter(o => {
-    return o.value === OPEN_DEVICE_MODAL_VALUE;
-  })[0];
 
   info("Checking initial device modal state");
   ok(modal.classList.contains("closed") && !modal.classList.contains("opened"),
     "The device modal is closed by default.");
 
   info("Opening device modal through device selector.");
-  EventUtils.synthesizeMouseAtCenter(select, {type: "mousedown"},
-    ui.toolWindow);
-  EventUtils.synthesizeMouseAtCenter(editDeviceOption, {type: "mouseup"},
-    ui.toolWindow);
+
+  let event = new toolWindow.UIEvent("change", {
+    view: toolWindow,
+    bubbles: true,
+    cancelable: true
+  });
+
+  select.value = OPEN_DEVICE_MODAL_VALUE;
+  select.dispatchEvent(event);
 
   ok(modal.classList.contains("opened") && !modal.classList.contains("closed"),
     "The device modal is displayed.");
 }
 
-function switchDevice({ toolWindow }, value) {
+function changeSelectValue({ toolWindow }, selector, value) {
+  info(`Selecting ${value} in ${selector}.`);
+
   return new Promise(resolve => {
-    let selector = ".viewport-device-selector";
     let select = toolWindow.document.querySelector(selector);
     isnot(select, null, `selector "${selector}" should match an existing element.`);
 
@@ -255,6 +266,19 @@ function switchDevice({ toolWindow }, value) {
     select.dispatchEvent(event);
   });
 }
+
+const selectDevice = (ui, value) => Promise.all([
+  once(ui, "viewport-device-changed"),
+  changeSelectValue(ui, ".viewport-device-selector", value)
+]);
+
+const selectDPR = (ui, value) =>
+  changeSelectValue(ui, "#global-dpr-selector > select", value);
+
+const selectNetworkThrottling = (ui, value) => Promise.all([
+  once(ui, "network-throttling-changed"),
+  changeSelectValue(ui, "#global-network-throttling-selector", value)
+]);
 
 function getSessionHistory(browser) {
   return ContentTask.spawn(browser, {}, function* () {
@@ -326,5 +350,12 @@ function addDeviceForTest(device) {
   registerCleanupFunction(() => {
     // Note that assertions in cleanup functions are not displayed unless they failed.
     ok(removeDevice(device), `Removed Test Device "${device.name}" from the list.`);
+  });
+}
+
+function waitForClientClose(ui) {
+  return new Promise(resolve => {
+    info("RDM's debugger client is now closed");
+    ui.client.addOneTimeListener("closed", resolve);
   });
 }

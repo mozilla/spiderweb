@@ -268,28 +268,26 @@ function normalizeCssData(db) {
     // Fill in any missing DB information from the static database.
     db = Object.assign({}, CSS_PROPERTIES_DB, db);
 
-    // Add "supports" information to the css properties if it's missing.
-    if (!db.properties.color.supports) {
-      for (let name in db.properties) {
-        if (typeof CSS_PROPERTIES_DB.properties[name] === "object") {
-          db.properties[name].supports = CSS_PROPERTIES_DB.properties[name].supports;
-        }
-      }
-    }
+    let missingSupports = !db.properties.color.supports;
+    let missingValues = !db.properties.color.values;
+    let missingSubproperties = !db.properties.background.subproperties;
 
-    // Add "values" information to the css properties if it's missing.
-    if (!db.properties.color.values) {
-      for (let name in db.properties) {
-        if (typeof CSS_PROPERTIES_DB.properties[name] === "object") {
-          db.properties[name].values = CSS_PROPERTIES_DB.properties[name].values;
-        }
+    for (let name in db.properties) {
+      // Skip the current property if we can't find it in CSS_PROPERTIES_DB.
+      if (typeof CSS_PROPERTIES_DB.properties[name] !== "object") {
+        continue;
       }
-    }
 
-    // Add "subproperties" information to the css properties if it's
-    // missing.
-    if (!db.properties.background.subproperties) {
-      for (let name in db.properties) {
+      // Add "supports" information to the css properties if it's missing.
+      if (missingSupports) {
+        db.properties[name].supports = CSS_PROPERTIES_DB.properties[name].supports;
+      }
+      // Add "values" information to the css properties if it's missing.
+      if (missingValues) {
+        db.properties[name].values = CSS_PROPERTIES_DB.properties[name].values;
+      }
+      // Add "subproperties" information to the css properties if it's missing.
+      if (missingSubproperties) {
         db.properties[name].subproperties =
           CSS_PROPERTIES_DB.properties[name].subproperties;
       }
@@ -311,7 +309,8 @@ function reattachCssColorValues(db) {
 
     for (let name in db.properties) {
       const property = db.properties[name];
-      if (property.values[0] === "COLOR") {
+      // "values" can be undefined if {name} was not found in CSS_PROPERTIES_DB.
+      if (property.values && property.values[0] === "COLOR") {
         property.values.shift();
         property.values = property.values.concat(colors).sort();
       }

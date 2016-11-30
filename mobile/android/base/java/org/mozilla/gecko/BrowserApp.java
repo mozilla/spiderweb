@@ -8,17 +8,16 @@ package org.mozilla.gecko;
 import android.Manifest;
 import android.annotation.TargetApi;
 import android.app.DownloadManager;
+import android.content.ContentProviderClient;
 import android.os.Environment;
 import android.os.Process;
-import android.support.annotation.CheckResult;
 import android.support.annotation.NonNull;
 
 import android.graphics.Rect;
 
 import org.json.JSONArray;
 import org.mozilla.gecko.activitystream.ActivityStream;
-import org.mozilla.gecko.adjust.AdjustHelperInterface;
-import org.mozilla.gecko.adjust.AttributionHelperListener;
+import org.mozilla.gecko.adjust.AdjustBrowserAppDelegate;
 import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.AppConstants.Versions;
 import org.mozilla.gecko.DynamicToolbar.VisibilityTransition;
@@ -321,14 +320,15 @@ public class BrowserApp extends GeckoApp
     private final TelemetryCorePingDelegate mTelemetryCorePingDelegate = new TelemetryCorePingDelegate();
 
     private final List<BrowserAppDelegate> delegates = Collections.unmodifiableList(Arrays.asList(
-            (BrowserAppDelegate) new AddToHomeScreenPromotion(),
-            (BrowserAppDelegate) new ScreenshotDelegate(),
-            (BrowserAppDelegate) new BookmarkStateChangeDelegate(),
-            (BrowserAppDelegate) new ReaderViewBookmarkPromotion(),
-            (BrowserAppDelegate) new ContentNotificationsDelegate(),
-            (BrowserAppDelegate) new PostUpdateHandler(),
+            new AddToHomeScreenPromotion(),
+            new ScreenshotDelegate(),
+            new BookmarkStateChangeDelegate(),
+            new ReaderViewBookmarkPromotion(),
+            new ContentNotificationsDelegate(),
+            new PostUpdateHandler(),
             mTelemetryCorePingDelegate,
-            new OfflineTabStatusDelegate()
+            new OfflineTabStatusDelegate(),
+            new AdjustBrowserAppDelegate(mTelemetryCorePingDelegate)
     ));
 
     @NonNull
@@ -602,7 +602,7 @@ public class BrowserApp extends GeckoApp
         }
 
         final SafeIntent intent = new SafeIntent(getIntent());
-        final boolean isInAutomation = getIsInAutomationFromEnvironment(intent);
+        final boolean isInAutomation = IntentUtils.getIsInAutomationFromEnvironment(intent);
 
         // This has to be prepared prior to calling GeckoApp.onCreate, because
         // widget code and BrowserToolbar need it, and they're created by the
@@ -771,8 +771,6 @@ public class BrowserApp extends GeckoApp
         mReadingListHelper = new ReadingListHelper(appContext, profile);
         mAccountsHelper = new AccountsHelper(appContext, profile);
 
-        initAdjustSDK(this, isInAutomation, mTelemetryCorePingDelegate);
-
         if (AppConstants.MOZ_ANDROID_BEAM) {
             NfcAdapter nfc = NfcAdapter.getDefaultAdapter(this);
             if (nfc != null) {
@@ -830,22 +828,6 @@ public class BrowserApp extends GeckoApp
     }
 
     /**
-     * Gets whether or not we're in automation from the passed in environment variables.
-     *
-     * We need to read environment variables from the intent string
-     * extra because environment variables from our test harness aren't set
-     * until Gecko is loaded, and we need to know this before then.
-     *
-     * The return value of this method should be used early since other
-     * initialization may depend on its results.
-     */
-    @CheckResult
-    private boolean getIsInAutomationFromEnvironment(final SafeIntent intent) {
-        final HashMap<String, String> envVars = IntentUtils.getEnvVarMap(intent);
-        return !TextUtils.isEmpty(envVars.get(IntentUtils.ENV_VAR_IN_AUTOMATION));
-    }
-
-    /**
      * Initializes the default Switchboard URLs the first time.
      * @param intent
      */
@@ -865,19 +847,6 @@ public class BrowserApp extends GeckoApp
 
     private static void initTelemetryUploader(final boolean isInAutomation) {
         TelemetryUploadService.setDisabled(isInAutomation);
-    }
-
-    private static void initAdjustSDK(final Context context, final boolean isInAutomation, final AttributionHelperListener listener) {
-        final AdjustHelperInterface adjustHelper = AdjustConstants.getAdjustHelper();
-        adjustHelper.onCreate(context, AdjustConstants.MOZ_INSTALL_TRACKING_ADJUST_SDK_APP_TOKEN, listener);
-
-        // Adjust stores enabled state so this is only necessary because users may have set
-        // their data preferences before this feature was implemented and we need to respect
-        // those before upload can occur in Adjust.onResume.
-        final SharedPreferences prefs = GeckoSharedPrefs.forApp(context);
-        final boolean enabled = !isInAutomation &&
-                prefs.getBoolean(GeckoPreferences.PREFS_HEALTHREPORT_UPLOAD_ENABLED, true);
-        adjustHelper.setEnabled(enabled);
     }
 
     private void showUpdaterPermissionSnackbar() {
@@ -1090,9 +1059,6 @@ public class BrowserApp extends GeckoApp
             return;
         }
 
-        // Needed for Adjust to get accurate session measurements
-        AdjustConstants.getAdjustHelper().onResume();
-
         if (!mHasResumed) {
             EventDispatcher.getInstance().unregisterGeckoThreadListener((GeckoEventListener) this,
                     "Prompt:ShowTop");
@@ -1112,9 +1078,6 @@ public class BrowserApp extends GeckoApp
         if (mIsAbortingAppLaunch) {
             return;
         }
-
-        // Needed for Adjust to get accurate session measurements
-        AdjustConstants.getAdjustHelper().onPause();
 
         if (mHasResumed) {
             // Register for Prompt:ShowTop so we can foreground this activity even if it's hidden.
@@ -1518,13 +1481,6 @@ public class BrowserApp extends GeckoApp
         NotificationHelper.destroy();
         IntentHelper.destroy();
         GeckoNetworkManager.destroy();
-
-        if (SmsManager.isEnabled()) {
-            SmsManager.getInstance().stop();
-            if (isFinishing()) {
-                SmsManager.getInstance().shutdown();
-            }
-        }
 
         super.onDestroy();
 
@@ -1935,7 +1891,29 @@ public class BrowserApp extends GeckoApp
                 final NativeJSObject metadata = message.getObject("metadata");
                 final String location = message.getString("location");
 
-                // TODO: Store metadata (Bug 1301717)
+                final boolean hasImage = !TextUtils.isEmpty(metadata.optString("image_url", null));
+                final String metadataJSON = metadata.toString();
+
+                ThreadUtils.postToBackgroundThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        final ContentProviderClient contentProviderClient = getContentResolver()
+                                .acquireContentProviderClient(BrowserContract.PageMetadata.CONTENT_URI);
+                        if (contentProviderClient == null) {
+                            Log.w(LOGTAG, "Failed to obtain content provider client for: " + BrowserContract.PageMetadata.CONTENT_URI);
+                            return;
+                        }
+                        try {
+                            GlobalPageMetadata.getInstance().add(
+                                    BrowserDB.from(getProfile()),
+                                    contentProviderClient,
+                                    location, hasImage, metadataJSON);
+                        } finally {
+                            contentProviderClient.release();
+                        }
+                    }
+                });
+
                 break;
 
             default:
@@ -2048,7 +2026,7 @@ public class BrowserApp extends GeckoApp
                                 Log.i(LOGTAG, "Found tag " + tag);
                                 final Fragment frag = getSupportFragmentManager().findFragmentByTag(tag);
                                 if (frag == null) {
-                                    final Method getInstance = mediaManagerClass.getMethod("newInstance", (Class[]) null);
+                                    final Method getInstance = mediaManagerClass.getMethod("getInstance", (Class[]) null);
                                     final Fragment mpm = (Fragment) getInstance.invoke(null);
                                     getSupportFragmentManager().beginTransaction().disallowAddToBackStack().add(mpm, tag).commit();
                                 }
@@ -2120,15 +2098,17 @@ public class BrowserApp extends GeckoApp
                     break;
 
                 case "Video:Play":
-                    final String uri = message.getString("uri");
-                    final String uuid = message.getString("uuid");
-                    ThreadUtils.postToUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            mVideoPlayer.start(Uri.parse(uri));
-                            Telemetry.sendUIEvent(TelemetryContract.Event.SHOW, TelemetryContract.Method.CONTENT, "playhls");
-                        }
-                    });
+                    if (SwitchBoard.isInExperiment(this, Experiments.HLS_VIDEO_PLAYBACK)) {
+                        final String uri = message.getString("uri");
+                        final String uuid = message.getString("uuid");
+                        ThreadUtils.postToUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                mVideoPlayer.start(Uri.parse(uri));
+                                Telemetry.sendUIEvent(TelemetryContract.Event.SHOW, TelemetryContract.Method.CONTENT, "playhls");
+                            }
+                        });
+                    }
                     break;
 
                 case "Prompt:ShowTop":

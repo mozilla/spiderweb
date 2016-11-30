@@ -1230,10 +1230,6 @@ PresentationPresentingInfo::Shutdown(nsresult aReason)
     mTimer->Cancel();
   }
 
-  if (mDevice) {
-    mDevice->Disconnect();
-  }
-  mDevice = nullptr;
   mLoadingCallback = nullptr;
   mRequesterDescription = nullptr;
   mPendingCandidates.Clear();
@@ -1394,6 +1390,12 @@ PresentationPresentingInfo::UntrackFromService()
   if (mContentParent) {
     Unused << NS_WARN_IF(!static_cast<ContentParent*>(mContentParent.get())->SendNotifyPresentationReceiverCleanUp(mSessionId));
   }
+
+  // Receiver device might need clean up after session termination.
+  if (mDevice) {
+    mDevice->Disconnect();
+  }
+  mDevice = nullptr;
 
   // Remove the session info (and the in-process responding info if there's any).
   nsCOMPtr<nsIPresentationService> service =
@@ -1600,8 +1602,9 @@ PresentationPresentingInfo::ResolvedCallback(JSContext* aCx,
   }
 
   // Start to listen to document state change event |STATE_TRANSFERRING|.
-  HTMLIFrameElement* frame = nullptr;
-  nsresult rv = UNWRAP_OBJECT(HTMLIFrameElement, obj, frame);
+  // Use Element to support both HTMLIFrameElement and nsXULElement.
+  Element* frame = nullptr;
+  nsresult rv = UNWRAP_OBJECT(Element, obj, frame);
   if (NS_WARN_IF(!frame)) {
     ReplyError(NS_ERROR_DOM_OPERATION_ERR);
     return;

@@ -39,12 +39,16 @@ extensions.registerSchemaAPI("windows", "addon_parent", context => {
         let lastOnFocusChangedWindowId;
 
         let listener = event => {
-          let window = WindowManager.topWindow;
-          let windowId = window ? WindowManager.getId(window) : WindowManager.WINDOW_ID_NONE;
-          if (windowId !== lastOnFocusChangedWindowId) {
-            fire(windowId);
-            lastOnFocusChangedWindowId = windowId;
-          }
+          // Wait a tick to avoid firing a superfluous WINDOW_ID_NONE
+          // event when switching focus between two Firefox windows.
+          Promise.resolve().then(() => {
+            let window = Services.focus.activeWindow;
+            let windowId = window ? WindowManager.getId(window) : WindowManager.WINDOW_ID_NONE;
+            if (windowId !== lastOnFocusChangedWindowId) {
+              fire(windowId);
+              lastOnFocusChangedWindowId = windowId;
+            }
+          });
         };
         AllWindowEvents.addListener("focus", listener);
         AllWindowEvents.addListener("blur", listener);
@@ -92,7 +96,7 @@ extensions.registerSchemaAPI("windows", "addon_parent", context => {
           return result;
         }
 
-        let args = Cc["@mozilla.org/supports-array;1"].createInstance(Ci.nsISupportsArray);
+        let args = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
 
         if (createData.tabId !== null) {
           if (createData.url !== null) {
@@ -113,19 +117,19 @@ extensions.registerSchemaAPI("windows", "addon_parent", context => {
           }
           createData.incognito = incognito;
 
-          args.AppendElement(tab);
+          args.appendElement(tab, /* weak = */ false);
         } else if (createData.url !== null) {
           if (Array.isArray(createData.url)) {
-            let array = Cc["@mozilla.org/supports-array;1"].createInstance(Ci.nsISupportsArray);
+            let array = Cc["@mozilla.org/array;1"].createInstance(Ci.nsIMutableArray);
             for (let url of createData.url) {
-              array.AppendElement(mkstr(url));
+              array.appendElement(mkstr(url), /* weak = */ false);
             }
-            args.AppendElement(array);
+            args.appendElement(array, /* weak = */ false);
           } else {
-            args.AppendElement(mkstr(createData.url));
+            args.appendElement(mkstr(createData.url), /* weak = */ false);
           }
         } else {
-          args.AppendElement(mkstr(aboutNewTabService.newTabURL));
+          args.appendElement(mkstr(aboutNewTabService.newTabURL), /* weak = */ false);
         }
 
         let features = ["chrome"];
@@ -160,20 +164,16 @@ extensions.registerSchemaAPI("windows", "addon_parent", context => {
         return new Promise(resolve => {
           window.addEventListener("load", function listener() {
             window.removeEventListener("load", listener);
-
-            if (createData.state == "maximized" || createData.state == "normal" ||
-                (createData.state == "fullscreen" && AppConstants.platform != "macosx")) {
+            if (["maximized", "normal"].includes(createData.state)) {
               window.document.documentElement.setAttribute("sizemode", createData.state);
-            } else if (createData.state !== null) {
-              // window.minimize() has no effect until the window has been shown.
-              return promiseObserved("document-shown", doc => doc == window.document).then(() => {
-                WindowManager.setState(window, createData.state);
-                resolve();
-              });
             }
-            resolve();
+            resolve(promiseObserved("browser-delayed-startup-finished", win => win == window));
           });
         }).then(() => {
+          // Some states only work after delayed-startup-finished
+          if (["minimized", "fullscreen", "docked"].includes(createData.state)) {
+            WindowManager.setState(window, createData.state);
+          }
           if (allowScriptsToClose) {
             for (let {linkedBrowser} of window.gBrowser.tabs) {
               onXULFrameLoaderCreated({target: linkedBrowser});
@@ -181,7 +181,7 @@ extensions.registerSchemaAPI("windows", "addon_parent", context => {
                                              "XULFrameLoaderCreated", onXULFrameLoaderCreated);
             }
           }
-          return WindowManager.convert(extension, window);
+          return WindowManager.convert(extension, window, {populate: true});
         });
       },
 

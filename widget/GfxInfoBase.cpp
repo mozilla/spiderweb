@@ -30,6 +30,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/Logging.h"
 #include "MediaPrefs.h"
 #include "gfxPrefs.h"
@@ -47,6 +48,7 @@ using mozilla::MutexAutoLock;
 
 nsTArray<GfxDriverInfo>* GfxInfoBase::mDriverInfo;
 bool GfxInfoBase::mDriverInfoObserverInitialized;
+bool GfxInfoBase::mShutdownOccurred;
 
 // Observes for shutdown so that the child GfxDriverInfo list is freed.
 class ShutdownObserver : public nsIObserver
@@ -71,6 +73,8 @@ public:
 
     for (uint32_t i = 0; i < DeviceVendorMax; i++)
       delete GfxDriverInfo::mDeviceVendors[i];
+
+    GfxInfoBase::mShutdownOccurred = true;
 
     return NS_OK;
   }
@@ -161,6 +165,7 @@ GetPrefNameForFeature(int32_t aFeature)
     case nsIGfxInfo::FEATURE_VP8_HW_DECODE:
     case nsIGfxInfo::FEATURE_VP9_HW_DECODE:
     case nsIGfxInfo::FEATURE_DX_INTEROP2:
+    case nsIGfxInfo::FEATURE_GPU_PROCESS:
       // We don't provide prefs for these features.
       break;
     default:
@@ -859,6 +864,13 @@ GfxInfoBase::GetFeatureStatusImpl(int32_t aFeature,
     return NS_OK;
   }
 
+  if (mShutdownOccurred) {
+    // This is futile; we've already commenced shutdown and our blocklists have
+    // been deleted. We may want to look into resurrecting the blocklist instead
+    // but for now, just don't even go there.
+    return NS_OK;
+  }
+
   // If an operating system was provided by the derived GetFeatureStatusImpl,
   // grab it here. Otherwise, the OS is unknown.
   OperatingSystem os = (aOS ? *aOS : OperatingSystem::Unknown);
@@ -1331,6 +1343,9 @@ GfxInfoBase::BuildFeatureStateLog(JSContext* aCx, const FeatureState& aFeature,
 void
 GfxInfoBase::DescribeFeatures(JSContext* aCx, JS::Handle<JSObject*> aObj)
 {
+  JS::Rooted<JSObject*> obj(aCx);
+  gfx::FeatureStatus gpuProcess = gfxConfig::GetValue(Feature::GPU_PROCESS);
+  InitFeatureObject(aCx, aObj, "gpuProcess", FEATURE_GPU_PROCESS, Some(gpuProcess), &obj);
 }
 
 bool
@@ -1424,6 +1439,19 @@ GfxInfoBase::GetContentBackend(nsAString & aContentBackend)
   }
 
   aContentBackend.Assign(outStr);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+GfxInfoBase::GetUsingGPUProcess(bool *aOutValue)
+{
+  GPUProcessManager* gpu = GPUProcessManager::Get();
+  if (!gpu) {
+    // Not supported in content processes.
+    return NS_ERROR_FAILURE;
+  }
+
+  *aOutValue = !!gpu->GetGPUChild();
   return NS_OK;
 }
 

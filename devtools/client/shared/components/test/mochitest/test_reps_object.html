@@ -1,4 +1,6 @@
-
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 <!DOCTYPE HTML>
 <html>
 <!--
@@ -17,6 +19,7 @@ Test Obj rep
 window.onload = Task.async(function* () {
   let { Rep } = browserRequire("devtools/client/shared/components/reps/rep");
   let { Obj } = browserRequire("devtools/client/shared/components/reps/object");
+  const { MODE } = browserRequire("devtools/client/shared/components/reps/constants");
 
   const componentUnderTest = Obj;
 
@@ -55,15 +58,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: defaultOutput,
       }
     ];
@@ -83,15 +86,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: `Object`,
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: defaultOutput,
       }
     ];
@@ -112,15 +115,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: `Object`,
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: defaultOutput,
       }
     ];
@@ -138,15 +141,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: `Object`,
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: defaultOutput,
       }
     ];
@@ -171,15 +174,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: `Object`,
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: defaultOutput,
       }
     ];
@@ -202,15 +205,15 @@ window.onload = Task.async(function* () {
         expectedOutput: defaultOutput,
       },
       {
-        mode: "tiny",
+        mode: MODE.TINY,
         expectedOutput: `Object`,
       },
       {
-        mode: "short",
+        mode: MODE.SHORT,
         expectedOutput: defaultOutput,
       },
       {
-        mode: "long",
+        mode: MODE.LONG,
         expectedOutput: defaultOutput,
       }
     ];

@@ -85,7 +85,6 @@ class nsIScriptContext;
 class nsIScriptSecurityManager;
 class nsIStringBundle;
 class nsIStringBundleService;
-class nsISupportsArray;
 class nsISupportsHashKey;
 class nsIURI;
 class nsIUUIDGenerator;
@@ -199,6 +198,23 @@ public:
   static bool     IsCallerChrome();
   static bool     ThreadsafeIsCallerChrome();
   static bool     IsCallerContentXBL();
+
+  // The APIs for checking whether the caller is system (in the sense of system
+  // principal) should only be used when the JSContext is known to accurately
+  // represent the caller.  In practice, that means you should only use them in
+  // two situations at the moment:
+  //
+  // 1) Functions used in WebIDL Func annotations.
+  // 2) Bindings code or other code called directly from the JS engine.
+  //
+  // Use pretty much anywhere else is almost certainly wrong and should be
+  // replaced with [NeedsCallerType] annotations in bindings.
+
+  // Check whether the caller is system if you know you're on the main thread.
+  static bool IsSystemCaller(JSContext* aCx);
+
+  // Check whether the caller is system if you might be on a worker thread.
+  static bool ThreadsafeIsSystemCaller(JSContext* aCx);
 
   // In the traditional Gecko architecture, both C++ code and untrusted JS code
   // needed to rely on the same XPCOM method/getter/setter to get work done.
@@ -1864,11 +1880,6 @@ public:
   static nsresult CreateArrayBuffer(JSContext *aCx, const nsACString& aData,
                                     JSObject** aResult);
 
-  static nsresult CreateBlobBuffer(JSContext* aCx,
-                                   nsISupports* aParent,
-                                   const nsACString& aData,
-                                   JS::MutableHandle<JS::Value> aBlob);
-
   static void StripNullChars(const nsAString& aInStr, nsAString& aOutStr);
 
   /**
@@ -2401,7 +2412,7 @@ public:
    *
    * @param aContent The content to test for being an insertion point.
    */
-  static bool IsContentInsertionPoint(const nsIContent* aContent);
+  static bool IsContentInsertionPoint(nsIContent* aContent);
 
 
   /**
@@ -2500,7 +2511,7 @@ public:
                                                 mozilla::dom::nsIContentParent* aContentParent,
                                                 mozilla::dom::TabChild* aTabChild);
 
-  static void TransferablesToIPCTransferables(nsISupportsArray* aTransferables,
+  static void TransferablesToIPCTransferables(nsIArray* aTransferables,
                                               nsTArray<mozilla::dom::IPCDataTransfer>& aIPC,
                                               bool aInSyncMessage,
                                               mozilla::dom::nsIContentChild* aChild,
@@ -2556,7 +2567,7 @@ public:
    * Synthesize a mouse event to the given widget
    * (see nsIDOMWindowUtils.sendMouseEvent).
    */
-  static nsresult SendMouseEvent(nsCOMPtr<nsIPresShell> aPresShell,
+  static nsresult SendMouseEvent(const nsCOMPtr<nsIPresShell>& aPresShell,
                                  const nsAString& aType,
                                  float aX,
                                  float aY,
@@ -2710,6 +2721,8 @@ public:
                                  int32_t aNamespaceID,
                                  nsIAtom* aAtom,
                                  JS::MutableHandle<JSObject*> prototype);
+
+  static bool AttemptLargeAllocationLoad(nsIHttpChannel* aChannel);
 
 private:
   static bool InitializeEventTable();

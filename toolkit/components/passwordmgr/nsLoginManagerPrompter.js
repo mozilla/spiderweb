@@ -46,7 +46,7 @@ LoginManagerPromptFactory.prototype = {
   _asyncPrompts : {},
   _asyncPromptInProgress : false,
 
-  observe : function (subject, topic, data) {
+  observe : function(subject, topic, data) {
     this.log("Observed: " + topic);
     if (topic == "quit-application-granted") {
       this._cancelPendingPrompts();
@@ -60,7 +60,7 @@ LoginManagerPromptFactory.prototype = {
     }
   },
 
-  getPrompt : function (aWindow, aIID) {
+  getPrompt : function(aWindow, aIID) {
     var prompt = new LoginManagerPrompter().QueryInterface(aIID);
     prompt.init(aWindow, this);
     return prompt;
@@ -283,8 +283,8 @@ LoginManagerPrompter.prototype = {
    * Wrapper around the prompt service prompt. Saving random fields here
    * doesn't really make sense and therefore isn't implemented.
    */
-  prompt : function (aDialogTitle, aText, aPasswordRealm,
-                     aSavePassword, aDefaultText, aResult) {
+  prompt : function(aDialogTitle, aText, aPasswordRealm,
+                    aSavePassword, aDefaultText, aResult) {
     if (aSavePassword != Ci.nsIAuthPrompt.SAVE_PASSWORD_NEVER)
       throw new Components.Exception("prompt only supports SAVE_PASSWORD_NEVER",
                                      Cr.NS_ERROR_NOT_IMPLEMENTED);
@@ -304,7 +304,7 @@ LoginManagerPrompter.prototype = {
    * Looks up a username and password in the database. Will prompt the user
    * with a dialog, even if a username and password are found.
    */
-  promptUsernameAndPassword : function (aDialogTitle, aText, aPasswordRealm,
+  promptUsernameAndPassword : function(aDialogTitle, aText, aPasswordRealm,
                                        aSavePassword, aUsername, aPassword) {
     this.log("===== promptUsernameAndPassword() called =====");
 
@@ -405,8 +405,8 @@ LoginManagerPrompter.prototype = {
    * with a dialog with a text field and ok/cancel buttons. If the user
    * allows it, then the password will be saved in the database.
    */
-  promptPassword : function (aDialogTitle, aText, aPasswordRealm,
-                             aSavePassword, aPassword) {
+  promptPassword : function(aDialogTitle, aText, aPasswordRealm,
+                            aSavePassword, aPassword) {
     this.log("===== promptPassword called() =====");
 
     if (aSavePassword == Ci.nsIAuthPrompt.SAVE_PASSWORD_FOR_SESSION)
@@ -481,7 +481,7 @@ LoginManagerPrompter.prototype = {
    * arguments to let callers know the login can't be saved because we don't
    * know whether it's http or https.
    */
-  _getRealmInfo : function (aRealmString) {
+  _getRealmInfo : function(aRealmString) {
     var httpRealm = /^.+ \(.+\)$/;
     if (httpRealm.test(aRealmString))
       return [null, null, null];
@@ -509,7 +509,7 @@ LoginManagerPrompter.prototype = {
    * @param {int}        aLevel
    * @param {nsIAuthInformation} aAuthInfo
    */
-  promptAuth : function (aChannel, aLevel, aAuthInfo) {
+  promptAuth : function(aChannel, aLevel, aAuthInfo) {
     var selectedLogin = null;
     var checkbox = { value : false };
     var checkboxLabel = null;
@@ -640,7 +640,7 @@ LoginManagerPrompter.prototype = {
     return ok;
   },
 
-  asyncPromptAuth : function (aChannel, aCallback, aContext, aLevel, aAuthInfo) {
+  asyncPromptAuth : function(aChannel, aCallback, aContext, aLevel, aAuthInfo) {
     var cancelable = null;
 
     try {
@@ -693,7 +693,7 @@ LoginManagerPrompter.prototype = {
   /* ---------- nsILoginManagerPrompter prompts ---------- */
 
 
-  init : function (aWindow = null, aFactory = null) {
+  init : function(aWindow = null, aFactory = null) {
     if (!aWindow) {
       // There may be no applicable window e.g. in a Sandbox or JSM.
       this._chromeWindow = null;
@@ -721,7 +721,7 @@ LoginManagerPrompter.prototype = {
     this._opener = aOpener;
   },
 
-  promptToSavePassword : function (aLogin) {
+  promptToSavePassword : function(aLogin) {
     this.log("promptToSavePassword");
     var notifyObj = this._getPopupNote() || this._getNotifyBox();
     if (notifyObj)
@@ -733,7 +733,7 @@ LoginManagerPrompter.prototype = {
   /**
    * Displays a notification bar.
    */
-  _showLoginNotification : function (aNotifyBox, aName, aText, aButtons) {
+  _showLoginNotification : function(aNotifyBox, aName, aText, aButtons) {
     var oldBar = aNotifyBox.getNotificationWithValue(aName);
     const priority = aNotifyBox.PRIORITY_INFO_MEDIUM;
 
@@ -772,10 +772,12 @@ LoginManagerPrompter.prototype = {
     let { browser } = this._getNotifyWindow();
 
     let saveMsgNames = {
-      prompt: login.username === "" ? "rememberLoginMsgNoUser"
-                                    : "rememberLoginMsg",
-      buttonLabel: "rememberLoginButtonText",
-      buttonAccessKey: "rememberLoginButtonAccessKey",
+      prompt: login.username === "" ? "saveLoginMsgNoUser"
+                                    : "saveLoginMsg",
+      buttonLabel: "saveLoginButtonAllow.label",
+      buttonAccessKey: "saveLoginButtonAllow.accesskey",
+      secondaryButtonLabel: "saveLoginButtonDeny.label",
+      secondaryButtonAccessKey: "saveLoginButtonDeny.accesskey",
     };
 
     let changeMsgNames = {
@@ -783,6 +785,8 @@ LoginManagerPrompter.prototype = {
                                     : "updateLoginMsg",
       buttonLabel: "updateLoginButtonText",
       buttonAccessKey: "updateLoginButtonAccessKey",
+      secondaryButtonLabel: "updateLoginButtonDeny.label",
+      secondaryButtonAccessKey: "updateLoginButtonDeny.accesskey",
     };
 
     let initialMsgNames = type == "password-save" ? saveMsgNames
@@ -790,7 +794,8 @@ LoginManagerPrompter.prototype = {
 
     let brandBundle = Services.strings.createBundle(BRAND_BUNDLE);
     let brandShortName = brandBundle.GetStringFromName("brandShortName");
-    let promptMsg = type == "password-save" ? this._getLocalizedString(saveMsgNames.prompt, [brandShortName])
+    let host = this._getShortDisplayHost(login.hostname);
+    let promptMsg = type == "password-save" ? this._getLocalizedString(saveMsgNames.prompt, [brandShortName, host])
                                             : this._getLocalizedString(changeMsgNames.prompt);
 
     let histogramName = type == "password-save" ? "PWMGR_PROMPT_REMEMBER_ACTION"
@@ -803,7 +808,7 @@ LoginManagerPrompter.prototype = {
     let currentNotification;
 
     let updateButtonStatus = (element) => {
-      let mainActionButton = chromeDoc.getAnonymousElementByAttribute(element.button, "anonid", "button");
+      let mainActionButton = element.button;
       // Disable the main button inside the menu-button if the password field is empty.
       if (login.password.length == 0) {
         mainActionButton.setAttribute("disabled", true);
@@ -919,7 +924,7 @@ LoginManagerPrompter.prototype = {
       }
     };
 
-    // The main action is the "Remember" or "Update" button.
+    // The main action is the "Save" or "Update" button.
     let mainAction = {
       label: this._getLocalizedString(initialMsgNames.buttonLabel),
       accessKey: this._getLocalizedString(initialMsgNames.buttonAccessKey),
@@ -934,16 +939,26 @@ LoginManagerPrompter.prototype = {
       }
     };
 
-    // Include a "Never for this site" button when saving a new password.
-    let secondaryActions = type == "password-save" ? [{
-      label: this._getLocalizedString("notifyBarNeverRememberButtonText"),
-      accessKey: this._getLocalizedString("notifyBarNeverRememberButtonAccessKey"),
+    let secondaryActions = [{
+      label: this._getLocalizedString(initialMsgNames.secondaryButtonLabel),
+      accessKey: this._getLocalizedString(initialMsgNames.secondaryButtonAccessKey),
       callback: () => {
-        histogram.add(PROMPT_NEVER);
-        Services.logins.setLoginSavingEnabled(login.hostname, false);
+        histogram.add(PROMPT_NOTNOW);
         browser.focus();
       }
-    }] : null;
+    }];
+    // Include a "Never for this site" button when saving a new password.
+    if (type == "password-save") {
+      secondaryActions.push({
+        label: this._getLocalizedString("notifyBarNeverRememberButtonText2"),
+        accessKey: this._getLocalizedString("notifyBarNeverRememberButtonAccessKey2"),
+        callback: () => {
+          histogram.add(PROMPT_NEVER);
+          Services.logins.setLoginSavingEnabled(login.hostname, false);
+          browser.focus();
+        }
+      });
+    }
 
     let usernamePlaceholder = this._getLocalizedString("noUsernamePlaceholder");
     let togglePasswordLabel = this._getLocalizedString("togglePasswordLabel");
@@ -957,11 +972,11 @@ LoginManagerPrompter.prototype = {
       mainAction,
       secondaryActions,
       {
-        timeout: Date.now() + 10000,
-        displayURI: Services.io.newURI(login.hostname, null, null),
         persistWhileVisible: true,
+        persistent: true,
         passwordNotificationType: type,
-        eventCallback: function (topic) {
+        hideClose: true,
+        eventCallback: function(topic) {
           switch (topic) {
             case "showing":
               currentNotification = this;
@@ -1019,15 +1034,15 @@ LoginManagerPrompter.prototype = {
    * @param aLogin
    *        The login captured from the form.
    */
-  _showSaveLoginNotification : function (aNotifyObj, aLogin) {
+  _showSaveLoginNotification : function(aNotifyObj, aLogin) {
     // Ugh. We can't use the strings from the popup window, because they
     // have the access key marked in the string (eg "Mo&zilla"), along
     // with some weird rules for handling access keys that do not occur
     // in the string, for L10N. See commonDialog.js's setLabelForNode().
     var neverButtonText =
-          this._getLocalizedString("notifyBarNeverRememberButtonText");
+          this._getLocalizedString("notifyBarNeverRememberButtonText2");
     var neverButtonAccessKey =
-          this._getLocalizedString("notifyBarNeverRememberButtonAccessKey");
+          this._getLocalizedString("notifyBarNeverRememberButtonAccessKey2");
     var rememberButtonText =
           this._getLocalizedString("notifyBarRememberPasswordButtonText");
     var rememberButtonAccessKey =
@@ -1088,7 +1103,7 @@ LoginManagerPrompter.prototype = {
     Services.obs.notifyObservers(aLogin, "passwordmgr-prompt-save", null);
   },
 
-  _removeLoginNotifications : function () {
+  _removeLoginNotifications : function() {
     var popupNote = this._getPopupNote();
     if (popupNote)
       popupNote = popupNote.getNotification("password");
@@ -1116,7 +1131,7 @@ LoginManagerPrompter.prototype = {
    * Called when we detect a new login in a form submission,
    * asks the user what to do.
    */
-  _showSaveLoginDialog : function (aLogin) {
+  _showSaveLoginDialog : function(aLogin) {
     const buttonFlags = Ci.nsIPrompt.BUTTON_POS_1_DEFAULT +
         (Ci.nsIPrompt.BUTTON_TITLE_IS_STRING * Ci.nsIPrompt.BUTTON_POS_0) +
         (Ci.nsIPrompt.BUTTON_TITLE_IS_STRING * Ci.nsIPrompt.BUTTON_POS_1) +
@@ -1308,7 +1323,7 @@ LoginManagerPrompter.prototype = {
    *
    * Note; XPCOM stupidity: |count| is just |logins.length|.
    */
-  promptToChangePasswordWithUsernames : function (logins, count, aNewLogin) {
+  promptToChangePasswordWithUsernames : function(logins, count, aNewLogin) {
     this.log("promptToChangePasswordWithUsernames with count:", count);
 
     var usernames = logins.map(l => l.username);
@@ -1366,7 +1381,7 @@ LoginManagerPrompter.prototype = {
   /**
    * Given a content DOM window, returns the chrome window and browser it's in.
    */
-  _getChromeWindow: function (aWindow) {
+  _getChromeWindow: function(aWindow) {
     let windows = Services.wm.getEnumerator(null);
     while (windows.hasMoreElements()) {
       let win = windows.getNext();
@@ -1378,7 +1393,7 @@ LoginManagerPrompter.prototype = {
     return null;
   },
 
-  _getNotifyWindow: function () {
+  _getNotifyWindow: function() {
     // Some sites pop up a temporary login window, which disappears
     // upon submission of credentials. We want to put the notification
     // bar in the opener window if this seems to be happening.
@@ -1402,7 +1417,7 @@ LoginManagerPrompter.prototype = {
    * Returns the popup notification to this prompter,
    * or null if there isn't one available.
    */
-  _getPopupNote : function () {
+  _getPopupNote : function() {
     let popupNote = null;
 
     try {
@@ -1422,7 +1437,7 @@ LoginManagerPrompter.prototype = {
    * Returns the notification box to this prompter, or null if there isn't
    * a notification box available.
    */
-  _getNotifyBox : function () {
+  _getNotifyBox : function() {
     let notifyBox = null;
 
     try {
@@ -1443,7 +1458,7 @@ LoginManagerPrompter.prototype = {
    * is the same as some other existing login. So, pick a login with a
    * matching username, or return null.
    */
-  _repickSelectedLogin : function (foundLogins, username) {
+  _repickSelectedLogin : function(foundLogins, username) {
     for (var i = 0; i < foundLogins.length; i++)
       if (foundLogins[i].username == username)
         return foundLogins[i];
@@ -1462,7 +1477,7 @@ LoginManagerPrompter.prototype = {
    * formatted if required.
    *
    */
-  _getLocalizedString : function (key, formatArgs) {
+  _getLocalizedString : function(key, formatArgs) {
     if (formatArgs)
       return this._strBundle.formatStringFromName(
                                   key, formatArgs, formatArgs.length);
@@ -1475,7 +1490,7 @@ LoginManagerPrompter.prototype = {
    * it's too long. This helps prevent an evil site from messing with the
    * "save password?" prompt too much.
    */
-  _sanitizeUsername : function (username) {
+  _sanitizeUsername : function(username) {
     if (username.length > 30) {
       username = username.substring(0, 30);
       username += this._ellipsis;
@@ -1490,7 +1505,7 @@ LoginManagerPrompter.prototype = {
    * Returns the hostname to use in a nsILoginInfo object (for example,
    * "http://example.com").
    */
-  _getFormattedHostname : function (aURI) {
+  _getFormattedHostname : function(aURI) {
     let uri;
     if (aURI instanceof Ci.nsIURI) {
       uri = aURI;
@@ -1507,7 +1522,7 @@ LoginManagerPrompter.prototype = {
    * prompting purposes. Eg, "http://foo.com" --> "foo.com", or
    * "ftp://www.site.co.uk" --> "site.co.uk".
    */
-  _getShortDisplayHost: function (aURIString) {
+  _getShortDisplayHost: function(aURIString) {
     var displayHost;
 
     var eTLDService = Cc["@mozilla.org/network/effective-tld-service;1"].
@@ -1533,7 +1548,7 @@ LoginManagerPrompter.prototype = {
    * Returns the hostname and realm for which authentication is being
    * requested, in the format expected to be used with nsILoginInfo.
    */
-  _getAuthTarget : function (aChannel, aAuthInfo) {
+  _getAuthTarget : function(aChannel, aAuthInfo) {
     var hostname, realm;
 
     // If our proxy is demanding authentication, don't use the
@@ -1581,7 +1596,7 @@ LoginManagerPrompter.prototype = {
    * If the authentication was for a Windows domain, we'll prepend the
    * return username with the domain. (eg, "domain\user")
    */
-  _GetAuthInfo : function (aAuthInfo) {
+  _GetAuthInfo : function(aAuthInfo) {
     var username, password;
 
     var flags = aAuthInfo.flags;
@@ -1601,7 +1616,7 @@ LoginManagerPrompter.prototype = {
    * domain out of the username if necessary and sets domain, username and
    * password on the auth information object.
    */
-  _SetAuthInfo : function (aAuthInfo, username, password) {
+  _SetAuthInfo : function(aAuthInfo, username, password) {
     var flags = aAuthInfo.flags;
     if (flags & Ci.nsIAuthInformation.NEED_DOMAIN) {
       // Domain is separated from username by a backslash

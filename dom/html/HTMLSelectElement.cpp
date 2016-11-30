@@ -587,7 +587,8 @@ HTMLSelectElement::Add(nsGenericHTMLElement& aElement,
 
   // If the before parameter is not null, we are equivalent to the
   // insertBefore method on the parent of before.
-  parent->InsertBefore(aElement, aBefore, aError);
+  nsCOMPtr<nsINode> refNode = aBefore;
+  parent->InsertBefore(aElement, refNode, aError);
 }
 
 NS_IMETHODIMP
@@ -1446,14 +1447,14 @@ HTMLSelectElement::IsDisabledForEvents(EventMessage aMessage)
 }
 
 nsresult
-HTMLSelectElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
+HTMLSelectElement::GetEventTargetParent(EventChainPreVisitor& aVisitor)
 {
   aVisitor.mCanHandle = false;
   if (IsDisabledForEvents(aVisitor.mEvent->mMessage)) {
     return NS_OK;
   }
 
-  return nsGenericHTMLFormElementWithState::PreHandleEvent(aVisitor);
+  return nsGenericHTMLFormElementWithState::GetEventTargetParent(aVisitor);
 }
 
 nsresult

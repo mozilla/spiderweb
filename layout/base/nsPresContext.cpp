@@ -603,11 +603,6 @@ nsPresContext::GetUserPreferences()
                         GET_BIDI_OPTION_NUMERAL(bidiOptions));
   SET_BIDI_OPTION_NUMERAL(bidiOptions, prefInt);
 
-  prefInt =
-    Preferences::GetInt(IBMBIDI_SUPPORTMODE_STR,
-                        GET_BIDI_OPTION_SUPPORT(bidiOptions));
-  SET_BIDI_OPTION_SUPPORT(bidiOptions, prefInt);
-
   // We don't need to force reflow: either we are initializing a new
   // prescontext or we are being called from UpdateAfterPreferencesChanged()
   // which triggers a reflow anyway.
@@ -887,10 +882,6 @@ nsPresContext::Init(nsDeviceContext* aDeviceContext)
   mInitialized = true;
 #endif
 
-  mBorderWidthTable[NS_STYLE_BORDER_WIDTH_THIN] = CSSPixelsToAppUnits(1);
-  mBorderWidthTable[NS_STYLE_BORDER_WIDTH_MEDIUM] = CSSPixelsToAppUnits(3);
-  mBorderWidthTable[NS_STYLE_BORDER_WIDTH_THICK] = CSSPixelsToAppUnits(5);
-
   return NS_OK;
 }
 
@@ -987,7 +978,7 @@ nsPresContext::DetachShell()
     mRestyleManager->Disconnect();
     mRestyleManager = nullptr;
   }
-  if (mRefreshDriver && mRefreshDriver->PresContext() == this) {
+  if (mRefreshDriver && mRefreshDriver->GetPresContext() == this) {
     mRefreshDriver->Disconnect();
     // Can't null out the refresh driver here.
   }
@@ -2755,6 +2746,19 @@ nsPresContext::IsRootContentDocument() const
 
   nsIFrame* f = view->GetFrame();
   return (f && f->PresContext()->IsChrome());
+}
+
+void
+nsPresContext::NotifyNonBlankPaint()
+{
+  MOZ_ASSERT(!mHadNonBlankPaint);
+  mHadNonBlankPaint = true;
+  if (IsRootContentDocument()) {
+    RefPtr<nsDOMNavigationTiming> timing = mDocument->GetNavigationTiming();
+    if (timing) {
+      timing->NotifyNonBlankPaintForRootContentDocument();
+    }
+  }
 }
 
 bool nsPresContext::GetPaintFlashing() const

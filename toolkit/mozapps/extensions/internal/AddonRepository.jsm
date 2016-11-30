@@ -11,7 +11,7 @@ const Cr = Components.results;
 
 Components.utils.import("resource://gre/modules/Services.jsm");
 Components.utils.import("resource://gre/modules/AddonManager.jsm");
-/*globals AddonManagerPrivate*/
+/* globals AddonManagerPrivate*/
 Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
@@ -51,7 +51,6 @@ const XMLURI_PARSE_ERROR  = "http://www.mozilla.org/newlayout/xml/parsererror.xm
 const API_VERSION = "1.5";
 const DEFAULT_CACHE_TYPES = "extension,theme,locale,dictionary";
 
-const KEY_PROFILEDIR        = "ProfD";
 const FILE_DATABASE         = "addons.json";
 const DB_SCHEMA             = 5;
 const DB_MIN_JSON_SCHEMA    = 5;

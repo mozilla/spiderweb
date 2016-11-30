@@ -78,9 +78,9 @@ var ecmaGlobals =
     "Reflect",
     "RegExp",
     "Set",
-    {name: "SharedArrayBuffer", nightly: true},
+    {name: "SharedArrayBuffer", release: false},
     {name: "SIMD", nightly: true},
-    {name: "Atomics", nightly: true},
+    {name: "Atomics", release: false},
     "StopIteration",
     "String",
     "Symbol",
@@ -209,6 +209,8 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "CompositionEvent",
 // IMPORTANT: Do not change this list without review from a DOM peer!
+    "ConstantSourceNode",
+// IMPORTANT: Do not change this list without review from a DOM peer!
     "Controllers",
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "ConvolverNode",
@@ -269,7 +271,7 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "CSSValueList",
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    "CustomElementsRegistry",
+    "CustomElementRegistry",
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "CustomEvent",
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -349,8 +351,6 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "DOMTokenList",
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    "DOMTransactionEvent",
-// IMPORTANT: Do not change this list without review from a DOM peer!
     "DragEvent",
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "DynamicsCompressorNode",
@@ -404,6 +404,8 @@ var interfaceNamesInGlobalScope =
     "GamepadButton",
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "GamepadEvent",
+// IMPORTANT: Do not change this list without review from a DOM peer!
+    {name: "GamepadPose", release: false},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "HashChangeEvent",
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -565,6 +567,8 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "HTMLVideoElement",
 // IMPORTANT: Do not change this list without review from a DOM peer!
+    {name: "IdleDeadline", nightly: true},
+// IMPORTANT: Do not change this list without review from a DOM peer!
     "IDBCursor",
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "IDBCursorWithValue",
@@ -610,6 +614,10 @@ var interfaceNamesInGlobalScope =
     "InputEvent",
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "InstallTrigger",
+// IMPORTANT: Do not change this list without review from a DOM peer!
+    "IntersectionObserver",
+// IMPORTANT: Do not change this list without review from a DOM peer!
+    "IntersectionObserverEntry",
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "KeyEvent",
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -772,21 +780,21 @@ var interfaceNamesInGlobalScope =
     {name: "PresentationDeviceInfoManager",
      disabled: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "Presentation", disabled: true},
+    {name: "Presentation", desktop: false, release: false },
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PresentationAvailability", disabled: true},
+    {name: "PresentationAvailability", desktop: false, release: false },
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PresentationConnection", disabled: true},
+    {name: "PresentationConnection", desktop: false, release: false},
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PresentationConnectionAvailableEvent", disabled: true},
+    {name: "PresentationConnectionAvailableEvent", desktop: false, release: false },
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PresentationConnectionClosedEvent", disabled: true},
+    {name: "PresentationConnectionCloseEvent", desktop: false, release: false },
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PresentationConnectionList", disabled: true},
+    {name: "PresentationConnectionList", desktop: false, release: false },
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PresentationReceiver", disabled: true},
+    {name: "PresentationReceiver", desktop: false, release: false },
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    {name: "PresentationRequest", disabled: true},
+    {name: "PresentationRequest", desktop: false, release: false },
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "ProcessingInstruction",
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -886,7 +894,7 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "StorageEvent",
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    "StorageManager",
+    {name: "StorageManager", nightly: true},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "StyleSheet",
 // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1176,8 +1184,6 @@ var interfaceNamesInGlobalScope =
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "UIEvent",
 // IMPORTANT: Do not change this list without review from a DOM peer!
-    "UndoManager",
-// IMPORTANT: Do not change this list without review from a DOM peer!
     "URL",
 // IMPORTANT: Do not change this list without review from a DOM peer!
     "URLSearchParams",
@@ -1197,6 +1203,8 @@ var interfaceNamesInGlobalScope =
     {name: "VREyeParameters", release: false},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "VRFieldOfView", release: false},
+// IMPORTANT: Do not change this list without review from a DOM peer!
+    {name: "VRFrameData", release: false},
 // IMPORTANT: Do not change this list without review from a DOM peer!
     {name: "VRPose", release: false},
 // IMPORTANT: Do not change this list without review from a DOM peer!

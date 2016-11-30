@@ -13,7 +13,6 @@
 #include "mozilla/Telemetry.h"
 
 #include "OggDecoder.h"
-#include "OggReader.h"
 #include "OggDemuxer.h"
 
 #include "WebMDecoder.h"
@@ -23,12 +22,6 @@
 #include "AndroidMediaDecoder.h"
 #include "AndroidMediaReader.h"
 #include "AndroidMediaPluginHost.h"
-#endif
-#ifdef MOZ_OMX_DECODER
-#include "MediaOmxDecoder.h"
-#include "MediaOmxReader.h"
-#include "nsIPrincipal.h"
-#include "mozilla/dom/HTMLMediaElement.h"
 #endif
 #ifdef MOZ_DIRECTSHOW
 #include "DirectShowDecoder.h"
@@ -45,7 +38,6 @@
 
 #include "WaveDecoder.h"
 #include "WaveDemuxer.h"
-#include "WaveReader.h"
 
 #include "ADTSDecoder.h"
 #include "ADTSDemuxer.h"
@@ -72,7 +64,7 @@ CodecListContains(char const *const * aCodecs, const String& aCodec)
 
 static bool
 IsOggSupportedType(const nsACString& aType,
-                    const nsAString& aCodecs = EmptyString())
+                   const nsAString& aCodecs = EmptyString())
 {
   return OggDecoder::CanHandleMediaType(aType, aCodecs);
 }
@@ -81,34 +73,6 @@ static bool
 IsOggTypeAndEnabled(const nsACString& aType)
 {
   return IsOggSupportedType(aType);
-}
-
-// See http://www.rfc-editor.org/rfc/rfc2361.txt for the definitions
-// of WAVE media types and codec types. However, the audio/vnd.wave
-// MIME type described there is not used.
-static const char* const gWaveTypes[5] = {
-  "audio/x-wav",
-  "audio/wav",
-  "audio/wave",
-  "audio/x-pn-wav",
-  nullptr
-};
-
-static char const *const gWaveCodecs[4] = {
-  "1", // Microsoft PCM Format
-  "6", // aLaw Encoding
-  "7", // uLaw Encoding
-  nullptr
-};
-
-static bool
-IsWaveType(const nsACString& aType)
-{
-  if (!MediaDecoder::IsWaveEnabled()) {
-    return false;
-  }
-
-  return CodecListContains(gWaveTypes, aType);
 }
 
 static bool
@@ -145,89 +109,6 @@ IsHttpLiveStreamingType(const nsACString& aType)
 {
   return CodecListContains(gHttpLiveStreamingTypes, aType);
 }
-
-#ifdef MOZ_OMX_DECODER
-static const char* const gOmxTypes[] = {
-  "audio/mpeg",
-  "audio/mp4",
-  "audio/amr",
-  "audio/3gpp",
-  "audio/flac",
-  "video/mp4",
-  "video/x-m4v",
-  "video/3gpp",
-  "video/3gpp2",
-  "video/quicktime",
-#ifdef MOZ_OMX_WEBM_DECODER
-  "video/webm",
-  "audio/webm",
-#endif
-  "audio/x-matroska",
-  "video/mp2t",
-  "video/avi",
-  "video/x-matroska",
-  nullptr
-};
-
-static const char* const gB2GOnlyTypes[] = {
-  "audio/3gpp",
-  "audio/amr",
-  "audio/x-matroska",
-  "video/mp2t",
-  "video/avi",
-  "video/x-matroska",
-  nullptr
-};
-
-static bool
-IsOmxSupportedType(const nsACString& aType)
-{
-  if (!MediaDecoder::IsOmxEnabled()) {
-    return false;
-  }
-
-  return CodecListContains(gOmxTypes, aType);
-}
-
-static bool
-IsB2GSupportOnlyType(const nsACString& aType)
-{
-  return CodecListContains(gB2GOnlyTypes, aType);
-}
-
-static char const *const gH264Codecs[9] = {
-  "avc1.42E01E",  // H.264 Constrained Baseline Profile Level 3.0
-  "avc1.42001E",  // H.264 Baseline Profile Level 3.0
-  "avc1.58A01E",  // H.264 Extended Profile Level 3.0
-  "avc1.4D401E",  // H.264 Main Profile Level 3.0
-  "avc1.64001E",  // H.264 High Profile Level 3.0
-  "avc1.64001F",  // H.264 High Profile Level 3.1
-  "mp4v.20.3",    // 3GPP
-  "mp4a.40.2",    // AAC-LC
-  nullptr
-};
-
-static char const *const gMpegAudioCodecs[2] = {
-  "mp3",          // MP3
-  nullptr
-};
-
-#ifdef MOZ_OMX_WEBM_DECODER
-static char const *const gOMXWebMCodecs[] = {
-  "vorbis",
-  "vp8",
-  "vp8.0",
-  // Since Android KK, VP9 SW decoder is supported.
-  // http://developer.android.com/guide/appendix/media-formats.html
-#if ANDROID_VERSION > 18
-  "vp9",
-  "vp9.0",
-#endif
-  nullptr
-};
-#endif //MOZ_OMX_WEBM_DECODER
-
-#endif
 
 #ifdef MOZ_ANDROID_OMX
 static bool
@@ -283,11 +164,7 @@ static bool
 IsMP3SupportedType(const nsACString& aType,
                    const nsAString& aCodecs = EmptyString())
 {
-#ifdef MOZ_OMX_DECODER
-  return false;
-#else
   return MP3Decoder::CanHandleMediaType(aType, aCodecs);
-#endif
 }
 
 static bool
@@ -298,8 +175,8 @@ IsAACSupportedType(const nsACString& aType,
 }
 
 static bool
-IsWAVSupportedType(const nsACString& aType,
-                   const nsAString& aCodecs = EmptyString())
+IsWaveSupportedType(const nsACString& aType,
+                    const nsAString& aCodecs = EmptyString())
 {
   return WaveDecoder::CanHandleMediaType(aType, aCodecs);
 }
@@ -330,8 +207,14 @@ CanHandleCodecsType(const MediaContentType& aType,
       return CANPLAY_NO;
     }
   }
-  if (IsWaveType(aType.GetMIMEType())) {
-    codecList = gWaveCodecs;
+  if (IsWaveSupportedType(aType.GetMIMEType())) {
+    if (IsWaveSupportedType(aType.GetMIMEType(), aType.GetCodecs())) {
+      return CANPLAY_YES;
+    } else {
+      // We can only reach this position if a particular codec was requested,
+      // ogg is supported and working: the codec must be invalid.
+      return CANPLAY_NO;
+    }
   }
 #if !defined(MOZ_OMX_WEBM_DECODER)
   if (DecoderTraits::IsWebMTypeAndEnabled(aType.GetMIMEType())) {
@@ -364,20 +247,6 @@ CanHandleCodecsType(const MediaContentType& aType,
   if (IsFlacSupportedType(aType.GetMIMEType(), aType.GetCodecs())) {
     return CANPLAY_YES;
   }
-#ifdef MOZ_OMX_DECODER
-  if (IsOmxSupportedType(aType.GetMIMEType())) {
-    if (aType.GetMIMEType().EqualsASCII("audio/mpeg")) {
-      codecList = gMpegAudioCodecs;
-#ifdef MOZ_OMX_WEBM_DECODER
-    } else if (aType.GetMIMEType().EqualsASCII("audio/webm") ||
-        aType.GetMIMEType().EqualsASCII("video/webm")) {
-      codecList = gOMXWebMCodecs;
-#endif
-    } else {
-      codecList = gH264Codecs;
-    }
-  }
-#endif
 #ifdef MOZ_DIRECTSHOW
   DirectShowDecoder::GetSupportedCodecs(aType.GetMIMEType(), &codecList);
 #endif
@@ -431,7 +300,7 @@ CanHandleMediaType(const MediaContentType& aType,
   if (IsOggTypeAndEnabled(aType.GetMIMEType())) {
     return CANPLAY_MAYBE;
   }
-  if (IsWaveType(aType.GetMIMEType())) {
+  if (IsWaveSupportedType(aType.GetMIMEType())) {
     return CANPLAY_MAYBE;
   }
   if (DecoderTraits::IsMP4TypeAndEnabled(aType.GetMIMEType(), aDiagnostics)) {
@@ -451,11 +320,6 @@ CanHandleMediaType(const MediaContentType& aType,
   if (IsFlacSupportedType(aType.GetMIMEType())) {
     return CANPLAY_MAYBE;
   }
-#ifdef MOZ_OMX_DECODER
-  if (IsOmxSupportedType(aType.GetMIMEType())) {
-    return CANPLAY_MAYBE;
-  }
-#endif
 #ifdef MOZ_DIRECTSHOW
   if (DirectShowDecoder::GetSupportedCodecs(aType.GetMIMEType(), nullptr)) {
     return CANPLAY_MAYBE;
@@ -486,7 +350,7 @@ DecoderTraits::CanHandleContentType(const MediaContentType& aContentType,
 bool DecoderTraits::ShouldHandleMediaType(const char* aMIMEType,
                                           DecoderDoctorDiagnostics* aDiagnostics)
 {
-  if (IsWaveType(nsDependentCString(aMIMEType))) {
+  if (IsWaveSupportedType(nsDependentCString(aMIMEType))) {
     // We should not return true for Wave types, since there are some
     // Wave codecs actually in use in the wild that we don't support, and
     // we should allow those to be handled by plugins or helper apps.
@@ -539,7 +403,7 @@ InstantiateDecoder(const nsACString& aType,
     decoder = new OggDecoder(aOwner);
     return decoder.forget();
   }
-  if (IsWaveType(aType)) {
+  if (IsWaveSupportedType(aType)) {
     decoder = new WaveDecoder(aOwner);
     return decoder.forget();
   }
@@ -547,27 +411,6 @@ InstantiateDecoder(const nsACString& aType,
     decoder = new FlacDecoder(aOwner);
     return decoder.forget();
   }
-#ifdef MOZ_OMX_DECODER
-  if (IsOmxSupportedType(aType)) {
-    // we are discouraging Web and App developers from using those formats in
-    // gB2GOnlyTypes, thus we only allow them to be played on WebApps.
-    if (IsB2GSupportOnlyType(aType)) {
-      dom::HTMLMediaElement* element = aOwner->GetMediaElement();
-      if (!element) {
-        return nullptr;
-      }
-      nsIPrincipal* principal = element->NodePrincipal();
-      if (!principal) {
-        return nullptr;
-      }
-      if (principal->GetAppStatus() < nsIPrincipal::APP_STATUS_PRIVILEGED) {
-        return nullptr;
-      }
-    }
-    decoder = new MediaOmxDecoder(aOwner);
-    return decoder.forget();
-  }
-#endif
 #ifdef MOZ_ANDROID_OMX
   if (MediaDecoder::IsAndroidMediaPluginEnabled() &&
       EnsureAndroidMediaPluginHost()->FindDecoder(aType, nullptr)) {
@@ -628,25 +471,15 @@ MediaDecoderReader* DecoderTraits::CreateReader(const nsACString& aType, Abstrac
   if (IsAACSupportedType(aType)) {
     decoderReader = new MediaFormatReader(aDecoder, new ADTSDemuxer(aDecoder->GetResource()));
   } else
-  if (IsWAVSupportedType(aType)) {
+  if (IsWaveSupportedType(aType)) {
     decoderReader = new MediaFormatReader(aDecoder, new WAVDemuxer(aDecoder->GetResource()));
   } else
   if (IsFlacSupportedType(aType)) {
     decoderReader = new MediaFormatReader(aDecoder, new FlacDemuxer(aDecoder->GetResource()));
   } else
   if (IsOggSupportedType(aType)) {
-    decoderReader = MediaPrefs::OggFormatReader() ?
-      static_cast<MediaDecoderReader*>(new MediaFormatReader(aDecoder, new OggDemuxer(aDecoder->GetResource()))) :
-      new OggReader(aDecoder);
+    decoderReader = new MediaFormatReader(aDecoder, new OggDemuxer(aDecoder->GetResource()));
   } else
-  if (IsWaveType(aType)) {
-    decoderReader = new WaveReader(aDecoder);
-  } else
-#ifdef MOZ_OMX_DECODER
-  if (IsOmxSupportedType(aType)) {
-    decoderReader = new MediaOmxReader(aDecoder);
-  } else
-#endif
 #ifdef MOZ_ANDROID_OMX
   if (MediaDecoder::IsAndroidMediaPluginEnabled() &&
       EnsureAndroidMediaPluginHost()->FindDecoder(aType, nullptr)) {
@@ -680,13 +513,6 @@ bool DecoderTraits::IsSupportedInVideoDocument(const nsACString& aType)
 
   return
     IsOggSupportedType(aType) ||
-#ifdef MOZ_OMX_DECODER
-    // We support the formats in gB2GOnlyTypes only inside WebApps on firefoxOS
-    // but not in general web content. Ensure we dont create a VideoDocument
-    // when accessing those format URLs directly.
-    (IsOmxSupportedType(aType) &&
-     !IsB2GSupportOnlyType(aType)) ||
-#endif
     IsWebMSupportedType(aType) ||
 #ifdef MOZ_ANDROID_OMX
     (MediaDecoder::IsAndroidMediaPluginEnabled() && IsAndroidMediaType(aType)) ||

@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-#include "nsAutoPtr.h"
 #include "nsIObserverService.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
@@ -596,9 +595,8 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
   class CreateDecryptorDone : public GetGMPDecryptorCallback
   {
   public:
-    CreateDecryptorDone(GMPStorageTest* aRunner, nsIRunnable* aContinuation)
-      : mRunner(aRunner),
-        mContinuation(aContinuation)
+    explicit CreateDecryptorDone(GMPStorageTest* aRunner)
+      : mRunner(aRunner)
     {
     }
 
@@ -610,13 +608,10 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
       if (mRunner->mDecryptor) {
         mRunner->mDecryptor->Init(mRunner, false, true);
       }
-      nsCOMPtr<nsIThread> thread(GetGMPThread());
-      thread->Dispatch(mContinuation, NS_DISPATCH_NORMAL);
     }
 
   private:
     RefPtr<GMPStorageTest> mRunner;
-    nsCOMPtr<nsIRunnable> mContinuation;
   };
 
   void CreateDecryptor(const nsCString& aNodeId,
@@ -679,7 +674,13 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     tags.AppendElement(NS_LITERAL_CSTRING("fake"));
 
     UniquePtr<GetGMPDecryptorCallback> callback(
-      new CreateDecryptorDone(this, aContinuation));
+      new CreateDecryptorDone(this));
+
+    // Continue after the OnSetDecryptorId message, so that we don't
+    // get warnings in the async shutdown tests due to receiving the
+    // SetDecryptorId message after we've started shutdown.
+    mSetDecryptorIdContinuation = aContinuation;
+
     nsresult rv =
       service->GetGMPDecryptor(nullptr, &tags, mNodeId, Move(callback));
     EXPECT_TRUE(NS_SUCCEEDED(rv));
@@ -768,17 +769,18 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
   void TestForgetThisSite_CollectSiteInfo() {
     mozilla::OriginAttributesPattern pattern;
 
-    nsAutoPtr<NodeInfo> siteInfo(
+    UniquePtr<NodeInfo> siteInfo(
         new NodeInfo(NS_LITERAL_CSTRING("http://example1.com"),
                      pattern));
     // Collect nodeIds that are expected to remain for later comparison.
-    EnumerateGMPStorageDir(NS_LITERAL_CSTRING("id"), NodeIdCollector(siteInfo));
+    EnumerateGMPStorageDir(NS_LITERAL_CSTRING("id"),
+                           NodeIdCollector(siteInfo.get()));
     // Invoke "Forget this site" on the main thread.
-    NS_DispatchToMainThread(NewRunnableMethod<nsAutoPtr<NodeInfo>>(
-        this, &GMPStorageTest::TestForgetThisSite_Forget, siteInfo));
+    NS_DispatchToMainThread(NewRunnableMethod<UniquePtr<NodeInfo>&&>(
+        this, &GMPStorageTest::TestForgetThisSite_Forget, Move(siteInfo)));
   }
 
-  void TestForgetThisSite_Forget(nsAutoPtr<NodeInfo> aSiteInfo) {
+  void TestForgetThisSite_Forget(UniquePtr<NodeInfo>&& aSiteInfo) {
     RefPtr<GeckoMediaPluginServiceParent> service =
         GeckoMediaPluginServiceParent::GetSingleton();
     service->ForgetThisSiteNative(NS_ConvertUTF8toUTF16(aSiteInfo->siteToForget),
@@ -787,8 +789,8 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     nsCOMPtr<nsIThread> thread;
     service->GetThread(getter_AddRefs(thread));
 
-    nsCOMPtr<nsIRunnable> r = NewRunnableMethod<nsAutoPtr<NodeInfo>>(
-        this, &GMPStorageTest::TestForgetThisSite_Verify, aSiteInfo);
+    nsCOMPtr<nsIRunnable> r = NewRunnableMethod<UniquePtr<NodeInfo>&&>(
+        this, &GMPStorageTest::TestForgetThisSite_Verify, Move(aSiteInfo));
     thread->Dispatch(r, NS_DISPATCH_NORMAL);
 
     nsCOMPtr<nsIRunnable> f = NewRunnableMethod(
@@ -835,13 +837,13 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     nsTArray<nsCString> mExpectedRemainingNodeIds;
   };
 
-  void TestForgetThisSite_Verify(nsAutoPtr<NodeInfo> aSiteInfo) {
+  void TestForgetThisSite_Verify(UniquePtr<NodeInfo>&& aSiteInfo) {
     nsresult rv = EnumerateGMPStorageDir(
-        NS_LITERAL_CSTRING("id"), NodeIdVerifier(aSiteInfo));
+        NS_LITERAL_CSTRING("id"), NodeIdVerifier(aSiteInfo.get()));
     EXPECT_TRUE(NS_SUCCEEDED(rv));
 
     rv = EnumerateGMPStorageDir(
-        NS_LITERAL_CSTRING("storage"), StorageVerifier(aSiteInfo));
+        NS_LITERAL_CSTRING("storage"), StorageVerifier(aSiteInfo.get()));
     EXPECT_TRUE(NS_SUCCEEDED(rv));
   }
 
@@ -1373,6 +1375,16 @@ class GMPStorageTest : public GMPDecryptorProxyCallback
     }
   }
 
+  void SetDecryptorId(uint32_t aId) override
+  {
+    if (!mSetDecryptorIdContinuation) {
+      return;
+    }
+    nsCOMPtr<nsIThread> thread(GetGMPThread());
+    thread->Dispatch(mSetDecryptorIdContinuation, NS_DISPATCH_NORMAL);
+    mSetDecryptorIdContinuation = nullptr;
+  }
+
   void SetSessionId(uint32_t aCreateSessionToken,
                     const nsCString& aSessionId) override { }
   void ResolveLoadSessionPromise(uint32_t aPromiseId,
@@ -1415,6 +1427,8 @@ private:
   };
 
   nsTArray<ExpectedMessage> mExpected;
+
+  RefPtr<nsIRunnable> mSetDecryptorIdContinuation;
 
   GMPDecryptorProxy* mDecryptor;
   Monitor mMonitor;

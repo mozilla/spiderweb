@@ -71,7 +71,6 @@
 #include "WebGLSampler.h"
 #include "WebGLShader.h"
 #include "WebGLSync.h"
-#include "WebGLTimerQuery.h"
 #include "WebGLTransformFeedback.h"
 #include "WebGLVertexArray.h"
 #include "WebGLVertexAttribData.h"
@@ -252,12 +251,15 @@ WebGLContext::DestroyResourcesAndContext()
     mActiveProgramLinkInfo = nullptr;
     mBoundDrawFramebuffer = nullptr;
     mBoundReadFramebuffer = nullptr;
-    mActiveOcclusionQuery = nullptr;
     mBoundRenderbuffer = nullptr;
     mBoundVertexArray = nullptr;
     mDefaultVertexArray = nullptr;
     mBoundTransformFeedback = nullptr;
     mDefaultTransformFeedback = nullptr;
+
+    mQuerySlot_SamplesPassed = nullptr;
+    mQuerySlot_TFPrimsWritten = nullptr;
+    mQuerySlot_TimeElapsed = nullptr;
 
     mIndexedUniformBufferBindings.clear();
 
@@ -272,7 +274,6 @@ WebGLContext::DestroyResourcesAndContext()
     ClearLinkedList(mShaders);
     ClearLinkedList(mSyncs);
     ClearLinkedList(mTextures);
-    ClearLinkedList(mTimerQueries);
     ClearLinkedList(mTransformFeedbacks);
     ClearLinkedList(mVertexArrays);
 
@@ -1647,7 +1648,7 @@ WebGLContext::DummyReadFramebufferOperation(const char* funcName)
 }
 
 bool
-WebGLContext::HasTimestampBits() const
+WebGLContext::Has64BitTimestamps() const
 {
     // 'sync' provides glGetInteger64v either by supporting ARB_sync, GL3+, or GLES3+.
     return gl->IsSupported(GLFeature::sync);
@@ -2301,6 +2302,21 @@ ZeroTextureData(WebGLContext* webgl, const char* funcName, GLuint tex,
     gl::GLContext* gl = webgl->GL();
     gl->MakeCurrent();
 
+    GLenum scopeBindTarget;
+    switch (target.get()) {
+    case LOCAL_GL_TEXTURE_CUBE_MAP_POSITIVE_X:
+    case LOCAL_GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
+    case LOCAL_GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
+    case LOCAL_GL_TEXTURE_CUBE_MAP_NEGATIVE_Y:
+    case LOCAL_GL_TEXTURE_CUBE_MAP_POSITIVE_Z:
+    case LOCAL_GL_TEXTURE_CUBE_MAP_NEGATIVE_Z:
+        scopeBindTarget = LOCAL_GL_TEXTURE_CUBE_MAP;
+        break;
+    default:
+        scopeBindTarget = target.get();
+        break;
+    }
+    ScopedBindTexture scopeBindTexture(gl, tex, scopeBindTarget);
     auto compression = usage->format->compression;
     if (compression) {
         MOZ_RELEASE_ASSERT(!xOffset && !yOffset && !zOffset, "GFX: Can't zero compressed texture with offsets.");
@@ -2379,7 +2395,6 @@ ZeroTextureData(WebGLContext* webgl, const char* funcName, GLuint tex,
 
     ScopedUnpackReset scopedReset(webgl);
     gl->fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 1); // Don't bother with striding it well.
-
     const auto error = DoTexSubImage(gl, target, level, xOffset, yOffset, zOffset, width,
                                      height, depth, packing, zeros.get());
     if (error)
@@ -2512,6 +2527,50 @@ WebGLContext::StartVRPresentation()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+static inline size_t
+SizeOfViewElem(const dom::ArrayBufferView& view)
+{
+    const auto& elemType = view.Type();
+    if (elemType == js::Scalar::MaxTypedArrayViewType) // DataViews.
+        return 1;
+
+    return js::Scalar::byteSize(elemType);
+}
+
+bool
+WebGLContext::ValidateArrayBufferView(const char* funcName,
+                                      const dom::ArrayBufferView& view, GLuint elemOffset,
+                                      GLuint elemCountOverride, uint8_t** const out_bytes,
+                                      size_t* const out_byteLen)
+{
+    view.ComputeLengthAndData();
+    uint8_t* const bytes = view.DataAllowShared();
+    const size_t byteLen = view.LengthAllowShared();
+
+    const auto& elemSize = SizeOfViewElem(view);
+
+    size_t elemCount = byteLen / elemSize;
+    if (elemOffset > elemCount) {
+        ErrorInvalidValue("%s: Invalid offset into ArrayBufferView.", funcName);
+        return false;
+    }
+    elemCount -= elemOffset;
+
+    if (elemCountOverride) {
+        if (elemCountOverride > elemCount) {
+            ErrorInvalidValue("%s: Invalid sub-length for ArrayBufferView.", funcName);
+            return false;
+        }
+        elemCount = elemCountOverride;
+    }
+
+    *out_bytes = bytes + (elemOffset * elemSize);
+    *out_byteLen = elemCount * elemSize;
+    return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // XPCOM goop
 
 void
@@ -2557,8 +2616,9 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(WebGLContext,
   mBoundRenderbuffer,
   mBoundVertexArray,
   mDefaultVertexArray,
-  mActiveOcclusionQuery,
-  mActiveTransformFeedbackQuery)
+  mQuerySlot_SamplesPassed,
+  mQuerySlot_TFPrimsWritten,
+  mQuerySlot_TimeElapsed)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WebGLContext)
     NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY

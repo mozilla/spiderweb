@@ -4,12 +4,25 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "NodeParent.h"
+#include "nsIFile.h"
+#include "nsDirectoryService.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsString.h"
+#include "nsINodeLoader.h"
+
+#if EXPOSE_INTL_API
+#include "unicode/putil.h"
+#endif
 
 namespace mozilla {
 namespace node {
 
-NodeParent::NodeParent()
-  : mProcess(nullptr)
+using namespace mozilla::ipc;
+
+NodeParent::NodeParent(const nsACString& script, nsINodeObserver* observer)
+  : mProcess(nullptr),
+    mNodeObserver(observer),
+    mScript(script)
 {
   MOZ_COUNT_CTOR(NodeParent);
 }
@@ -45,6 +58,33 @@ NodeParent::LaunchProcess()
     return NS_ERROR_FAILURE;
   }
 
+  // Spidernode needs the path to the ICU data.
+#if EXPOSE_INTL_API && defined(MOZ_ICU_DATA_ARCHIVE)
+  nsAutoCString icuDataPath(u_getDataDirectory());
+#else
+  nsAutoCString icuDataPath("");
+#endif
+
+  // Build the path to the init script.
+  nsCOMPtr<nsIFile> greDir;
+  nsDirectoryService::gService->Get(NS_GRE_DIR,
+                                    NS_GET_IID(nsIFile),
+                                    getter_AddRefs(greDir));
+  MOZ_ASSERT(greDir);
+  greDir->AppendNative(NS_LITERAL_CSTRING("modules"));
+  greDir->AppendNative(NS_LITERAL_CSTRING("spiderweb"));
+  greDir->AppendNative(NS_LITERAL_CSTRING("init.js"));
+  nsAutoString initScript;
+  greDir->GetPath(initScript);
+
+  nsTArray<nsCString> args;
+  args.AppendElement(NS_LITERAL_CSTRING("node"));
+  args.AppendElement(NS_LossyConvertUTF16toASCII(initScript));
+  args.AppendElement(mScript);
+  if (!SendStartNode(args, icuDataPath)) {
+    return NS_ERROR_FAILURE;
+  }
+
   return NS_OK;
 }
 
@@ -57,11 +97,11 @@ NodeParent::DeleteProcess()
   mProcess = nullptr;
 }
 
-bool
-NodeParent::RecvPing()
+mozilla::ipc::IPCResult
+NodeParent::RecvMessage(const nsCString& aMessage)
 {
-  printf("Ping!\n");
-  return SendPong();
+  mNodeObserver->OnMessage(aMessage);
+  return IPC_OK();
 }
 
 void

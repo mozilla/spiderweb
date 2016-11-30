@@ -15,13 +15,8 @@ from .base import (
 )
 
 from .mixins import (
-    EnduranceArguments,
-    EnduranceTestCaseMixin,
-    HTMLReportingArguments,
-    HTMLReportingTestResultMixin,
-    HTMLReportingTestRunnerMixin,
-    MemoryEnduranceTestCaseMixin,
     BrowserMobProxyTestCaseMixin,
     BrowserMobProxyArguments,
     BrowserMobTestCase,
+    WindowManagerMixin,
 )

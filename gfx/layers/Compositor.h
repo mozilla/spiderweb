@@ -17,7 +17,6 @@
 #include "mozilla/gfx/Types.h"          // for Float
 #include "mozilla/gfx/Triangle.h"       // for Triangle, TexturedTriangle
 #include "mozilla/layers/CompositorTypes.h"  // for DiagnosticTypes, etc
-#include "mozilla/layers/FenceUtils.h"  // for FenceHandle
 #include "mozilla/layers/LayersTypes.h"  // for LayersBackend
 #include "mozilla/widget/CompositorWidget.h"
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
@@ -124,7 +123,6 @@ namespace layers {
 struct Effect;
 struct EffectChain;
 class Image;
-class ImageHostOverlay;
 class Layer;
 class TextureSource;
 class DataTextureSource;
@@ -174,10 +172,6 @@ enum SurfaceInitMode
  *    construct an EffectChain for the quad,
  *    call DrawQuad,
  *  call EndFrame.
- * If the compositor is usually used for compositing but compositing is
- * temporarily done without the compositor, call EndFrameForExternalComposition
- * after compositing each frame so the compositor can remain internally
- * consistent.
  *
  * By default, the compositor will render to the screen, to render to a target,
  * call SetTargetContext or SetRenderTarget, the latter with a target created
@@ -435,15 +429,6 @@ public:
 
   virtual void SetDispAcquireFence(Layer* aLayer);
 
-  virtual FenceHandle GetReleaseFence();
-
-  /**
-   * Post-rendering stuff if the rendering is done outside of this Compositor
-   * e.g., by Composer2D.
-   * aTransform is the transform from user space to window space.
-   */
-  virtual void EndFrameForExternalComposition(const gfx::Matrix& aTransform) = 0;
-
   /**
    * Whether textures created by this compositor can receive partial updates.
    */
@@ -525,12 +510,6 @@ public:
   virtual void FinishPendingComposite() {}
 
   widget::CompositorWidget* GetWidget() const { return mWidget; }
-
-  virtual bool HasImageHostOverlays() { return false; }
-
-  virtual void AddImageHostOverlay(ImageHostOverlay* aOverlay) {}
-
-  virtual void RemoveImageHostOverlay(ImageHostOverlay* aOverlay) {}
 
   /**
    * Debug-build assertion that can be called to ensure code is running on the
@@ -682,10 +661,6 @@ protected:
   widget::CompositorWidget* mWidget;
 
   bool mIsDestroyed;
-
-#if defined(MOZ_WIDGET_GONK) && ANDROID_VERSION >= 17
-  FenceHandle mReleaseFenceHandle;
-#endif
 
   gfx::Color mClearColor;
   gfx::Color mDefaultClearColor;
