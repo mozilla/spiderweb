@@ -1,12 +1,15 @@
 "use strict";
 
+XPCOMUtils.defineLazyModuleGetter(this, "NetUtil",
+                                  "resource://gre/modules/NetUtil.jsm");
+
 var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
 Cu.import("resource://gre/modules/ExtensionUtils.jsm");
 
 let nextPortId = 1;
 
-extensions.registerSchemaAPI("node", "addon_parent", context => {
+extensions.registerSchemaAPI("node", "addon_child", context => {
   let {extension} = context;
   return {
     node: {

@@ -4,7 +4,6 @@ category webextension-scripts backgroundPage chrome://extensions/content/ext-bac
 category webextension-scripts cookies chrome://extensions/content/ext-cookies.js
 category webextension-scripts downloads chrome://extensions/content/ext-downloads.js
 category webextension-scripts management chrome://extensions/content/ext-management.js
-category webextension-scripts node chrome://extensions/content/ext-node.js
 category webextension-scripts notifications chrome://extensions/content/ext-notifications.js
 category webextension-scripts i18n chrome://extensions/content/ext-i18n.js
 category webextension-scripts idle chrome://extensions/content/ext-idle.js
@@ -36,6 +35,7 @@ category webextension-scripts-addon i18n chrome://extensions/content/ext-i18n.js
 #ifndef ANDROID
 category webextension-scripts-addon identity chrome://extensions/content/ext-c-identity.js
 #endif
+category webextension-scripts-addon node chrome://extensions/content/ext-c-node.js
 category webextension-scripts-addon runtime chrome://extensions/content/ext-c-runtime.js
 category webextension-scripts-addon test chrome://extensions/content/ext-c-test.js
 category webextension-scripts-addon storage chrome://extensions/content/ext-c-storage.js
